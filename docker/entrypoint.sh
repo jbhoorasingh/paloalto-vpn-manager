@@ -6,10 +6,9 @@ set -e
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
     python manage.py migrate --noinput
 
-    # Optional first-boot admin: set DJANGO_SUPERUSER_USERNAME/EMAIL/PASSWORD
-    if [ -n "${DJANGO_SUPERUSER_USERNAME}" ] && [ -n "${DJANGO_SUPERUSER_PASSWORD}" ]; then
-        python manage.py createsuperuser --noinput 2>/dev/null || true
-    fi
+    # Create/update the admin from DJANGO_SUPERUSER_* (idempotent upsert, so
+    # editing those vars and restarting actually updates the account).
+    python manage.py ensure_admin
 fi
 
 exec "$@"

@@ -1,9 +1,15 @@
 # ---- Stage 1: build the Vue/Tailwind assets ----
+# Mirror the repo layout (/app/frontend + /app/apps) so the Tailwind
+# `@source "../../apps/ui/templates"` directive in src/main.css resolves and
+# the Django-template utility classes are NOT purged from the production CSS.
 FROM node:22-alpine AS frontend
-WORKDIR /build
+WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
+# Django templates referenced by Tailwind's @source — required for the build
+# to include classes used outside the Vue components (sidebar, tables, etc.)
+COPY apps/ui/templates /app/apps/ui/templates
 RUN npx vite build
 
 # ---- Stage 2: application image ----
@@ -22,7 +28,7 @@ RUN pip install --no-cache-dir poetry \
 
 # Application code + built frontend assets
 COPY . .
-COPY --from=frontend /build/dist ./frontend/dist
+COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 # Bake the static manifest into the image (no DB access needed)
 RUN python manage.py collectstatic --noinput

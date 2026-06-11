@@ -96,9 +96,20 @@ docker compose -f docker-compose.prod.yml ps
 make prod-logs
 ```
 
-The web container runs migrations on boot (and creates an admin account if
-the `DJANGO_SUPERUSER_*` variables are set); the worker waits for a healthy
-web container before starting. The app listens on port **8000**.
+The web container runs migrations on boot and creates/updates the admin from
+the `DJANGO_SUPERUSER_*` variables (an idempotent upsert via `ensure_admin` —
+change the password in `.env.prod` and restart to apply it). Superusers are
+auto-granted every app role. The worker waits for a healthy web container
+before starting. The app listens on port **8000**.
+
+To create or change an admin by hand against the running stack:
+
+```bash
+# create another admin interactively
+docker compose -f docker-compose.prod.yml exec web python manage.py createsuperuser
+# or just reset a password
+docker compose -f docker-compose.prod.yml exec web python manage.py changepassword admin
+```
 
 **TLS:** the stack ships serving plain HTTP (`DJANGO_SECURE_SSL_REDIRECT=False`)
 so no certificate is needed to deploy. When a TLS-terminating proxy goes in

@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Config Templates{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  {# Page header #}
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Config Templates</h1>
+    <p class="mt-1 text-sm text-slate-500">
+      Each segment of the generated configuration has its own Jinja template — Python computes the
+      values (names, IPs, rules), the template owns the command syntax. The document layout assembles
+      the rendered segments. All changes are logged.
+    </p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-6">
+      {# Template table #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200">
+            <thead class="bg-slate-50">
+              <tr>
+                <th class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Template</th>
+                <th class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                <th class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Last Change</th>
+                <th class="relative px-6 py-3.5"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200 bg-white">
+              {% for item in items %}
+              <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-6 py-4">
+                  <a href="{% url 'ui:config-template-edit' item.name %}"
+                     class="text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors">
+                    {{ item.title }}
+                  </a>
+                  <p class="mt-0.5 text-xs text-slate-500 max-w-md">{{ item.description }}</p>
+                </td>
+                <td class="whitespace-nowrap px-6 py-4">
+                  {% if item.customized %}
+                  <span class="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-inset ring-violet-600/20">Customized</span>
+                  {% else %}
+                  <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-300">Default</span>
+                  {% endif %}
+                </td>
+                <td class="whitespace-nowrap px-6 py-4 text-xs text-slate-500">
+                  {% if item.updated_by %}
+                  {% firstof item.updated_by.get_full_name item.updated_by.username %} &middot; {{ item.updated_at|date:"M d, H:i" }}
+                  {% else %}
+                  --
+                  {% endif %}
+                </td>
+                <td class="whitespace-nowrap px-6 py-4 text-right text-sm">
+                  <a href="{% url 'ui:config-template-edit' item.name %}"
+                     class="text-indigo-600 hover:text-indigo-800 font-medium transition-colors">Edit</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {# Shared variables reference #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h2 class="text-base font-semibold text-slate-900">Shared Variables</h2>
+          <p class="mt-0.5 text-xs text-slate-500">Available in every segment template, in addition to the segment-specific variables shown in each editor.</p>
+        </div>
+        <dl class="px-6 py-4 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+          {% for name, doc in shared_variables %}
+          <div>
+            <dt class="text-xs font-mono font-semibold text-indigo-700">{% templatetag openvariable %} {{ name }} {% templatetag closevariable %}</dt>
+            <dd class="mt-0.5 text-xs text-slate-500">{{ doc }}</dd>
+          </div>
+          {% endfor %}
+        </dl>
+      </div>
+    </div>
+
+    {# Change history #}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden h-fit">
+      <div class="px-5 py-3.5 border-b border-slate-200 bg-slate-50">
+        <h3 class="text-sm font-semibold text-slate-900">Change History</h3>
+      </div>
+      <ul class="divide-y divide-slate-100">
+        {% for entry in history %}
+        <li class="px-5 py-3">
+          <p class="text-xs text-slate-700">
+            <span class="font-semibold">{% firstof entry.actor.get_full_name entry.actor.username "system" %}</span>
+            {% if entry.action == 0 %}created{% else %}updated{% endif %}
+            <span class="font-mono">{{ entry.object_repr }}</span>
+          </p>
+          <p class="text-xs text-slate-400">{{ entry.timestamp|date:"M d, Y H:i" }}</p>
+        </li>
+        {% empty %}
+        <li class="px-5 py-4 text-xs text-slate-500">No changes yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

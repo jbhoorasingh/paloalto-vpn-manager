@@ -62,8 +62,9 @@ urlpatterns = [
     path("vpn/requests/<int:pk>/config/download/", request_detail.request_config_download_view, name="request-config-download"),
     path("vpn/requests/<int:pk>/config/template/", config_template.request_config_template_view, name="request-config-template"),
 
-    # Config template (global)
+    # Config templates (document layout + segments)
     path("config-template/", config_template.config_template_view, name="config-template"),
+    path("config-template/<str:name>/", config_template.config_template_edit_view, name="config-template-edit"),
 
     # Users (admin-only)
     path("users/", user.user_list_view, name="user-list"),

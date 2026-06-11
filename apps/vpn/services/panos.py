@@ -154,251 +154,133 @@ def _remote_asn_for(vpn_request, tunnel_iface):
     return vpn_request.bgp_remote_asn
 
 
-def _ike_crypto_section(vpn_request, site, base):
-    p = _net_prefix(site)
-    name = f"{base}-ike"
-    path = f"{p}network ike crypto-profiles ike-crypto-profiles {name}"
-    commands = []
-    enc = _norm_encryption(vpn_request.ike_encryption)
-    if enc:
-        commands.append(f"{path} encryption {enc}")
-    hsh = _norm_hash(vpn_request.ike_integrity)
-    if hsh:
-        commands.append(f"{path} hash {hsh}")
-    dh = _norm_dh_group(vpn_request.ike_dh_group)
-    if dh:
-        commands.append(f"{path} dh-group {dh}")
-    if vpn_request.ike_lifetime:
-        commands.append(f"{path} lifetime seconds {vpn_request.ike_lifetime}")
-    return {"title": "IKE Crypto Profile", "commands": commands}
+def _ike_context(vpn_request, base):
+    return {
+        "profile_name": f"{base}-ike",
+        "encryption": _norm_encryption(vpn_request.ike_encryption),
+        "hash": _norm_hash(vpn_request.ike_integrity),
+        "dh_group": _norm_dh_group(vpn_request.ike_dh_group),
+        "lifetime": vpn_request.ike_lifetime or "",
+        "version": "ikev2" if vpn_request.ike_version == "2" else "ikev1",
+        "auth_method": vpn_request.auth_method,
+        "dpd_enabled": vpn_request.dpd_enabled,
+    }
 
 
-def _ipsec_crypto_section(vpn_request, site, base):
-    p = _net_prefix(site)
-    name = f"{base}-ipsec"
-    path = f"{p}network ike crypto-profiles ipsec-crypto-profiles {name}"
-    commands = []
+def _ipsec_context(vpn_request, base):
     enc = _norm_encryption(vpn_request.ipsec_encryption)
-    if enc:
-        commands.append(f"{path} esp encryption {enc}")
     # GCM ciphers carry their own integrity; PAN-OS requires authentication none.
     if enc and "gcm" in enc:
-        commands.append(f"{path} esp authentication none")
+        authentication = "none"
     else:
-        hsh = _norm_hash(vpn_request.ipsec_integrity)
-        if hsh:
-            commands.append(f"{path} esp authentication {hsh}")
-    pfs = _norm_dh_group(vpn_request.ipsec_pfs_group)
-    if pfs:
-        commands.append(f"{path} dh-group {pfs}")
-    if vpn_request.ipsec_lifetime:
-        commands.append(f"{path} lifetime seconds {vpn_request.ipsec_lifetime}")
-    return {"title": "IPsec Crypto Profile", "commands": commands}
+        authentication = _norm_hash(vpn_request.ipsec_integrity)
+    return {
+        "profile_name": f"{base}-ipsec",
+        "encryption": enc,
+        "authentication": authentication,
+        "dh_group": _norm_dh_group(vpn_request.ipsec_pfs_group),
+        "lifetime": vpn_request.ipsec_lifetime or "",
+    }
 
 
-def _tunnel_interface_cmds(site, ti):
-    p = _net_prefix(site)
-    zp = _zone_prefix(site)
-    unit = f"tunnel.{ti.tunnel_number}"
-    commands = [f"{p}network interface tunnel units {unit}"]
-    if ti.local_ip:
-        commands.append(
-            f"{p}network interface tunnel units {unit} ip {ti.local_ip}/{_subnet_prefixlen(ti)}"
-        )
-    commands.append(f"{zp}zone {VPN_ZONE} network layer3 {unit}")
-    commands.append(f"{p}network virtual-router {VIRTUAL_ROUTER} interface {unit}")
-    return commands
+def _tunnel_context(vpn_request, ti, idx, base, route_start):
+    """Plain-dict tunnel for segment templates. Returns (dict, next_route_idx)."""
+    local_ip = ti.local_ip or ""
+    static_routes = []
+    route_idx = route_start
+    if vpn_request.routing_type != "bgp":
+        for cidr in _parse_vendor_cidrs(vpn_request):
+            static_routes.append({
+                "name": f"{base}-rt{route_idx}",
+                "destination": cidr,
+                "nexthop": ti.remote_ip or "",
+            })
+            route_idx += 1
+    return {
+        "unit": f"tunnel.{ti.tunnel_number}",
+        "number": ti.tunnel_number,
+        "idx": idx,
+        "gw_name": f"{base}-gw{idx}",
+        "vpn_name": f"{base}-vpn{idx}",
+        "peer_name": f"{base}-peer{idx}",
+        "local_ip": local_ip,
+        "ip_with_prefix": f"{local_ip}/{_subnet_prefixlen(ti)}" if local_ip else "",
+        "remote_ip": ti.remote_ip or "",
+        "subnet_cidr": ti.subnet_cidr,
+        "peer_ip": ti.vendor_endpoint_ip or "",
+        "remote_asn": _remote_asn_for(vpn_request, ti) or "",
+        "static_routes": static_routes,
+    }, route_idx
 
 
-def _ike_gateway_cmds(vpn_request, site, ti, idx, base):
-    p = _net_prefix(site)
-    commands = []
-    ike_ver = "ikev2" if vpn_request.ike_version == "2" else "ikev1"
-    gw = f"{base}-gw{idx}"
-    path = f"{p}network ike gateway {gw}"
-    if vpn_request.auth_method == "psk":
-        commands.append(f"{path} authentication pre-shared-key key {PSK_PLACEHOLDER}")
-    else:
-        commands.append(f"{path} authentication certificate certificate-profile <CERT-PROFILE>")
-    commands.append(f"{path} protocol version {ike_ver}")
-    commands.append(f"{path} protocol {ike_ver} ike-crypto-profile {base}-ike")
-    if vpn_request.dpd_enabled:
-        commands.append(f"{path} protocol {ike_ver} dpd enable yes")
-    commands.append(f"{path} local-address interface {UNTRUST_INTERFACE}")
-    if site.public_ip:
-        commands.append(f"{path} local-address ip {site.public_ip}")
-    if ti.vendor_endpoint_ip:
-        commands.append(f"{path} peer-address ip {ti.vendor_endpoint_ip}")
-    return commands
-
-
-def _ipsec_tunnel_cmds(vpn_request, site, ti, idx, base):
-    p = _net_prefix(site)
-    name = f"{base}-vpn{idx}"
-    path = f"{p}network tunnel ipsec {name}"
-    return [
-        f"{path} auto-key ike-gateway {base}-gw{idx}",
-        f"{path} auto-key ipsec-crypto-profile {base}-ipsec",
-        f"{path} tunnel-interface tunnel.{ti.tunnel_number}",
-        f"{path} anti-replay yes",
-    ]
-
-
-def _bgp_shared_cmds(vpn_request, site, base):
-    """Site-level BGP setup shared by every tunnel peer."""
-    p = _net_prefix(site)
-    vr = f"{p}network virtual-router {VIRTUAL_ROUTER}"
-    local_asn = site.bgp_asn or vpn_request.bgp_local_asn
-    commands = [f"{vr} protocol bgp enable yes"]
-    if local_asn:
-        commands.append(f"{vr} protocol bgp local-as {local_asn}")
-    if site.public_ip:
-        commands.append(f"{vr} protocol bgp router-id {site.public_ip}")
-    commands.append(f"{vr} protocol bgp peer-group {base}-pg type ebgp")
-    return commands
-
-
-def _bgp_peer_cmds(vpn_request, site, ti, idx, base):
-    p = _net_prefix(site)
-    vr = f"{p}network virtual-router {VIRTUAL_ROUTER}"
-    peer_path = f"{vr} protocol bgp peer-group {base}-pg peer {base}-peer{idx}"
-    commands = [f"{peer_path} enable yes"]
-    remote_asn = _remote_asn_for(vpn_request, ti)
-    if remote_asn:
-        commands.append(f"{peer_path} peer-as {remote_asn}")
-    if ti.local_ip:
-        commands.append(
-            f"{peer_path} local-address interface tunnel.{ti.tunnel_number} "
-            f"ip {ti.local_ip}/{_subnet_prefixlen(ti)}"
-        )
-    else:
-        commands.append(f"{peer_path} local-address interface tunnel.{ti.tunnel_number}")
-    if ti.remote_ip:
-        commands.append(f"{peer_path} peer-address ip {ti.remote_ip}")
-    return commands
-
-
-def _static_route_cmds(vpn_request, site, ti, base, start_idx):
-    """Static routes steering each vendor CIDR into this tunnel."""
-    p = _net_prefix(site)
-    vr = f"{p}network virtual-router {VIRTUAL_ROUTER}"
-    commands = []
-    route_idx = start_idx
-    for cidr in _parse_vendor_cidrs(vpn_request):
-        path = f"{vr} routing-table ip static-route {base}-rt{route_idx}"
-        commands.append(f"{path} destination {cidr}")
-        commands.append(f"{path} interface tunnel.{ti.tunnel_number}")
-        if ti.remote_ip:
-            commands.append(f"{path} nexthop ip {ti.remote_ip}")
-        route_idx += 1
-    return commands, route_idx
-
-
-def _tunnel_sections(vpn_request, site, ti, idx, base, route_start):
-    """All per-tunnel sections for one TunnelInterface. Returns (sections, next_route_idx)."""
-    sections = [
-        {"title": "Tunnel Interface", "commands": _tunnel_interface_cmds(site, ti)},
-        {"title": "IKE Gateway", "commands": _ike_gateway_cmds(vpn_request, site, ti, idx, base)},
-        {"title": "IPsec Tunnel", "commands": _ipsec_tunnel_cmds(vpn_request, site, ti, idx, base)},
-    ]
-    next_route = route_start
-    if vpn_request.routing_type == "bgp":
-        sections.append({
-            "title": "BGP Peering",
-            "commands": _bgp_peer_cmds(vpn_request, site, ti, idx, base),
-        })
-    else:
-        route_cmds, next_route = _static_route_cmds(vpn_request, site, ti, base, route_start)
-        if route_cmds:
-            sections.append({"title": "Static Routes", "commands": route_cmds})
-    return sections, next_route
-
-
-def _service_objects_section(vpn_request, site, flows, base):
-    """One service object per flow that names TCP/UDP ports."""
-    p = _policy_prefix(site)
-    commands = []
+def _services_context(flows, base):
+    """Service objects + flow→service-name lookup."""
+    services = []
     service_names = {}
     for i, flow in enumerate(flows, start=1):
         if flow.protocol in ("tcp", "udp") and flow.destination_ports:
             name = f"{base}-svc{i}"
-            ports = flow.destination_ports.replace(" ", "")
-            commands.append(f"{p}service {name} protocol {flow.protocol} port {ports}")
+            services.append({
+                "name": name,
+                "protocol": flow.protocol,
+                "ports": flow.destination_ports.replace(" ", ""),
+            })
             service_names[flow.pk] = name
-    return {"title": "Service Objects", "commands": commands}, service_names
+    return services, service_names
 
 
-def _nat_section(vpn_request, site, mappings, tunnels, base):
+def _nat_rules_context(mappings, tunnels, base):
     """
-    NAT rules per mapping.
-
-    Outbound (we → vendor): one rule per tunnel — the destination NAT to the
-    real vendor host plus source NAT to that tunnel's interface address, so
-    return traffic always comes back through the same tunnel (symmetry).
-
-    Inbound (vendor → us): destination NAT to the real inside address plus
-    source NAT to the firewall's inside interface, so the server's replies
-    return through the translating firewall (symmetry under DR).
+    NAT rule dicts mirroring the symmetric-NAT design: outbound gets one rule
+    per egress tunnel (DNAT to vendor host + SNAT to the tunnel interface);
+    inbound DNATs to the inside address and SNATs to the inside interface.
     """
-    p = _policy_prefix(site)
-    rb = _rulebase(site)
-    commands = []
+    rules = []
     counters = {NatDirection.OUTBOUND: 0, NatDirection.INBOUND: 0}
     for nm in mappings:
         counters[nm.direction] = counters.get(nm.direction, 0) + 1
         idx = counters[nm.direction]
         if nm.direction == NatDirection.OUTBOUND:
-            # Internal hosts target the published NAT address; the firewall
-            # DNATs it to the real vendor host and SNATs to the egress tunnel.
             if tunnels:
                 for ti in tunnels:
-                    name = f"{base}-out{idx}-t{ti.tunnel_number}"
-                    path = f"{p}{rb} nat rules {name}"
-                    commands.append(f"{path} from {TRUST_ZONE}")
-                    commands.append(f"{path} to {VPN_ZONE}")
-                    commands.append(f"{path} to-interface tunnel.{ti.tunnel_number}")
-                    commands.append(f"{path} source any")
-                    commands.append(f"{path} destination {nm.nat_address}")
-                    commands.append(f"{path} service any")
-                    commands.append(
-                        f"{path} destination-translation translated-address {nm.real_address}"
-                    )
-                    commands.append(
-                        f"{path} source-translation dynamic-ip-and-port "
-                        f"interface-address interface tunnel.{ti.tunnel_number}"
-                    )
+                    rules.append({
+                        "name": f"{base}-out{idx}-t{ti.tunnel_number}",
+                        "from_zone": TRUST_ZONE,
+                        "to_zone": VPN_ZONE,
+                        "to_interface": f"tunnel.{ti.tunnel_number}",
+                        "source": "any",
+                        "destination": nm.nat_address,
+                        "service": "any",
+                        "translated_destination": nm.real_address,
+                        "snat_interface": f"tunnel.{ti.tunnel_number}",
+                    })
             else:
                 # No tunnels allocated yet — emit the DNAT half so the intent
                 # is visible; per-tunnel SNAT rules appear once tunnels exist.
-                name = f"{base}-nat-out{idx}"
-                path = f"{p}{rb} nat rules {name}"
-                commands.append(f"{path} from {TRUST_ZONE}")
-                commands.append(f"{path} to {VPN_ZONE}")
-                commands.append(f"{path} source any")
-                commands.append(f"{path} destination {nm.nat_address}")
-                commands.append(f"{path} service any")
-                commands.append(
-                    f"{path} destination-translation translated-address {nm.real_address}"
-                )
+                rules.append({
+                    "name": f"{base}-nat-out{idx}",
+                    "from_zone": TRUST_ZONE,
+                    "to_zone": VPN_ZONE,
+                    "to_interface": "",
+                    "source": "any",
+                    "destination": nm.nat_address,
+                    "service": "any",
+                    "translated_destination": nm.real_address,
+                    "snat_interface": "",
+                })
         else:
-            # The vendor targets the published NAT address; the firewall
-            # DNATs it to the real internal service and SNATs to its inside
-            # interface so replies return symmetrically.
-            name = f"{base}-nat-in{idx}"
-            path = f"{p}{rb} nat rules {name}"
-            commands.append(f"{path} from {VPN_ZONE}")
-            commands.append(f"{path} to {TRUST_ZONE}")
-            commands.append(f"{path} source any")
-            commands.append(f"{path} destination {nm.nat_address}")
-            commands.append(f"{path} service any")
-            commands.append(
-                f"{path} destination-translation translated-address {nm.real_address}"
-            )
-            commands.append(
-                f"{path} source-translation dynamic-ip-and-port "
-                f"interface-address interface {INSIDE_INTERFACE}"
-            )
-    return {"title": "NAT Policy", "commands": commands}
+            rules.append({
+                "name": f"{base}-nat-in{idx}",
+                "from_zone": VPN_ZONE,
+                "to_zone": TRUST_ZONE,
+                "to_interface": "",
+                "source": "any",
+                "destination": nm.nat_address,
+                "service": "any",
+                "translated_destination": nm.real_address,
+                "snat_interface": INSIDE_INTERFACE,
+            })
+    return rules
 
 
 def _dr_roles(vpn_request):
@@ -419,38 +301,27 @@ def _dr_roles(vpn_request):
     return site1, site2
 
 
-def _bgp_nat_advertisement_section(vpn_request, site, mappings, base):
+def _bgp_nat_context(vpn_request, site, mappings, base):
     """
-    Advertise the inbound NAT addresses to the vendor over the tunnel BGP
-    peering. On a DR pair both endpoints advertise the SAME addresses; the
-    secondary member prepends its AS so the primary path is preferred and
-    failover to the surviving site is automatic.
+    Inbound NAT addresses advertised to the vendor over tunnel BGP. On a DR
+    pair both endpoints advertise the SAME addresses; the secondary member
+    prepends its AS so the primary path is preferred.
     """
     inbound_addrs = []
     for nm in mappings:
         if nm.direction == NatDirection.INBOUND and nm.nat_address not in inbound_addrs:
             inbound_addrs.append(nm.nat_address)
-    if not inbound_addrs:
-        return {"title": "BGP NAT Advertisement", "commands": []}
-
-    p = _net_prefix(site)
-    vr = f"{p}network virtual-router {VIRTUAL_ROUTER}"
-    rule = f"{vr} protocol bgp policy export rules {base}-nat-adv"
     roles = _dr_roles(vpn_request)
-    is_secondary = bool(roles) and site.pk == roles[1].pk
-
-    commands = [f"{rule} enable yes", f"{rule} used-by {base}-pg"]
-    for addr in inbound_addrs:
-        commands.append(f"{rule} match address-prefix {addr} exact yes")
-    commands.append(f"{rule} action allow")
-    if is_secondary:
-        commands.append(
-            f"{rule} action allow update as-path prepend {DR_PREPEND_COUNT}"
-        )
-    return {"title": "BGP NAT Advertisement", "commands": commands}
+    return {
+        "rule_name": f"{base}-nat-adv",
+        "peer_group": f"{base}-pg",
+        "addresses": inbound_addrs,
+        "is_secondary": bool(roles) and site.pk == roles[1].pk,
+        "prepend_count": DR_PREPEND_COUNT,
+    }
 
 
-def _security_section(vpn_request, site, flows, mappings, service_names, base):
+def _security_rules_context(vpn_request, flows, mappings, service_names, base):
     """
     One security rule per (flow × flow direction).
 
@@ -459,12 +330,10 @@ def _security_section(vpn_request, site, flows, mappings, service_names, base):
     address when a mapping exists for the flow (PAN-OS matches pre-NAT
     addresses with post-NAT zones), otherwise the flow's real destination.
     """
-    p = _policy_prefix(site)
-    rb = _rulebase(site)
-    commands = []
     mapping_by_flow_dir = {
         (nm.traffic_flow_id, nm.direction): nm for nm in mappings if nm.traffic_flow_id
     }
+    rules = []
     rule_idx = 1
     for flow in flows:
         for direction in directions_for_flow(flow, vpn_request):
@@ -474,17 +343,16 @@ def _security_section(vpn_request, site, flows, mappings, service_names, base):
                 from_zone, to_zone = TRUST_ZONE, VPN_ZONE
             else:
                 from_zone, to_zone = VPN_ZONE, TRUST_ZONE
-            name = f"{base}-sec{rule_idx}"
-            path = f"{p}{rb} security rules {name}"
-            commands.append(f"{path} from {from_zone}")
-            commands.append(f"{path} to {to_zone}")
-            commands.append(f"{path} source {flow.source_cidr or 'any'}")
-            commands.append(f"{path} destination {destination or 'any'}")
-            commands.append(f"{path} application any")
-            commands.append(f"{path} service {service_names.get(flow.pk, 'any')}")
-            commands.append(f"{path} action allow")
+            rules.append({
+                "name": f"{base}-sec{rule_idx}",
+                "from_zone": from_zone,
+                "to_zone": to_zone,
+                "source": flow.source_cidr or "any",
+                "destination": destination or "any",
+                "service": service_names.get(flow.pk, "any"),
+            })
             rule_idx += 1
-    return {"title": "Security Policy", "commands": commands}
+    return rules
 
 
 def _concat_tunnel_category(tunnel_blocks, title):
@@ -501,6 +369,10 @@ def generate_site_config(vpn_request, site):
     """
     Generate the set-command config for one endpoint site.
 
+    Each segment (crypto, tunnel interface, gateways, routing, NAT, security)
+    is rendered from its segment template (see services/config_segments.py) —
+    Python supplies the values, the templates own the command syntax.
+
     Returns ``sections`` (the full site config flattened by category — what the
     Config tab and download render) plus a deployment-oriented split of the
     same commands: ``shared_sections`` (crypto profiles, shared BGP setup,
@@ -508,8 +380,14 @@ def generate_site_config(vpn_request, site):
     ``tunnels`` (one block per tunnel interface with its interface, IKE
     gateway, IPsec tunnel and routing commands).
     """
+    from apps.vpn.services.config_segments import (
+        get_segment_contents,
+        render_segment_commands,
+    )
+
     base = _name_base(vpn_request)
     notes = []
+    segment_errors = []
 
     if site.device_brand and site.device_brand != "palo_alto":
         return {
@@ -531,26 +409,101 @@ def generate_site_config(vpn_request, site):
         vpn_request.nat_mappings.filter(site=site).select_related("traffic_flow")
     )
 
+    contents = get_segment_contents()
+
+    def render(segment, extra):
+        commands, error = render_segment_commands(
+            segment, contents[segment], {**ctx, **extra}
+        )
+        if error:
+            segment_errors.append(error)
+        return commands
+
+    # Shared context for every segment
+    services, service_names = _services_context(flows, base)
+    ctx = {
+        "base": base,
+        "prefixes": {
+            "net": _net_prefix(site),
+            "zone": _zone_prefix(site),
+            "policy": _policy_prefix(site),
+            "rulebase": _rulebase(site),
+        },
+        "constants": {
+            "untrust_interface": UNTRUST_INTERFACE,
+            "inside_interface": INSIDE_INTERFACE,
+            "vpn_zone": VPN_ZONE,
+            "trust_zone": TRUST_ZONE,
+            "virtual_router": VIRTUAL_ROUTER,
+            "psk_placeholder": PSK_PLACEHOLDER,
+        },
+        "site": {
+            "name": site.name,
+            "code": site.code,
+            "public_ip": site.public_ip or "",
+            "bgp_asn": site.bgp_asn,
+            "device_group": site.device_group,
+            "template_name": site.template_name,
+            "management_type": site.management_type,
+        },
+        "request": {
+            "reference_number": vpn_request.reference_number,
+            "title": vpn_request.title,
+            "vendor": vpn_request.vendor.name if vpn_request.vendor else "",
+            "directionality": vpn_request.directionality,
+            "routing_type": vpn_request.routing_type,
+            "ike_version": vpn_request.ike_version,
+            "ike_encryption": vpn_request.ike_encryption,
+            "ike_integrity": vpn_request.ike_integrity,
+            "ike_dh_group": vpn_request.ike_dh_group,
+            "ipsec_encryption": vpn_request.ipsec_encryption,
+            "ipsec_integrity": vpn_request.ipsec_integrity,
+            "ipsec_pfs_group": vpn_request.ipsec_pfs_group,
+            "vendor_cidrs": vpn_request.vendor_cidrs,
+        },
+        "ike": _ike_context(vpn_request, base),
+        "ipsec": _ipsec_context(vpn_request, base),
+        "bgp": {
+            "local_asn": site.bgp_asn or vpn_request.bgp_local_asn or "",
+            "router_id": site.public_ip or "",
+            "peer_group": f"{base}-pg",
+        },
+    }
+
     crypto_sections = [
         s for s in (
-            _ike_crypto_section(vpn_request, site, base),
-            _ipsec_crypto_section(vpn_request, site, base),
+            {"title": "IKE Crypto Profile", "commands": render("ike_crypto", {})},
+            {"title": "IPsec Crypto Profile", "commands": render("ipsec_crypto", {})},
         ) if s["commands"]
     ]
     sections = list(crypto_sections)
     shared_sections = list(crypto_sections)
 
+    # Per-tunnel blocks: render each per-tunnel segment with a single tunnel
+    tunnel_dicts = []
     tunnel_blocks = []
     route_idx = 1
     for i, ti in enumerate(tunnels, start=1):
-        tunnel_section_list, route_idx = _tunnel_sections(
-            vpn_request, site, ti, i, base, route_idx
-        )
+        t, route_idx = _tunnel_context(vpn_request, ti, i, base, route_idx)
+        tunnel_dicts.append(t)
+        block_sections = [
+            {"title": "Tunnel Interface", "commands": render("tunnel_interface", {"tunnels": [t]})},
+            {"title": "IKE Gateway", "commands": render("ike_gateway", {"tunnels": [t]})},
+            {"title": "IPsec Tunnel", "commands": render("ipsec_tunnel", {"tunnels": [t]})},
+        ]
+        if vpn_request.routing_type == "bgp":
+            block_sections.append(
+                {"title": "BGP Peering", "commands": render("bgp_peer", {"tunnels": [t]})}
+            )
+        else:
+            block_sections.append(
+                {"title": "Static Routes", "commands": render("static_routes", {"tunnels": [t]})}
+            )
         tunnel_blocks.append({
             "iface": ti,
             "label": f"tunnel.{ti.tunnel_number}",
             "peer_ip": ti.vendor_endpoint_ip or "",
-            "sections": [s for s in tunnel_section_list if s["commands"]],
+            "sections": [s for s in block_sections if s["commands"]],
         })
 
     if tunnels:
@@ -567,7 +520,7 @@ def generate_site_config(vpn_request, site):
             "commands": _concat_tunnel_category(tunnel_blocks, "IPsec Tunnel"),
         })
         if vpn_request.routing_type == "bgp":
-            bgp_shared = {"title": "BGP Setup (Shared)", "commands": _bgp_shared_cmds(vpn_request, site, base)}
+            bgp_shared = {"title": "BGP Setup (Shared)", "commands": render("bgp_setup", {})}
             shared_sections.append(bgp_shared)
             sections.append({
                 "title": "Routing (BGP)",
@@ -583,17 +536,29 @@ def generate_site_config(vpn_request, site):
             "IPsec tunnel and routing commands will appear after InfoSec approval."
         )
 
-    svc_section, service_names = _service_objects_section(vpn_request, site, flows, base)
-    if svc_section["commands"]:
-        sections.append(svc_section)
-        shared_sections.append(svc_section)
+    if services:
+        svc_section = {
+            "title": "Service Objects",
+            "commands": render("service_objects", {"services": services}),
+        }
+        if svc_section["commands"]:
+            sections.append(svc_section)
+            shared_sections.append(svc_section)
 
     if mappings:
-        nat_section = _nat_section(vpn_request, site, mappings, tunnels, base)
+        nat_rules = _nat_rules_context(mappings, tunnels, base)
+        nat_section = {
+            "title": "NAT Policy",
+            "commands": render("nat_policy", {"nat_rules": nat_rules}),
+        }
         sections.append(nat_section)
         shared_sections.append(nat_section)
         if vpn_request.routing_type == "bgp":
-            adv_section = _bgp_nat_advertisement_section(vpn_request, site, mappings, base)
+            bgp_nat = _bgp_nat_context(vpn_request, site, mappings, base)
+            adv_section = {
+                "title": "BGP NAT Advertisement",
+                "commands": render("bgp_nat_advertisement", {"bgp_nat": bgp_nat}),
+            }
             if adv_section["commands"]:
                 sections.append(adv_section)
                 shared_sections.append(adv_section)
@@ -611,11 +576,18 @@ def generate_site_config(vpn_request, site):
         )
 
     if flows:
-        security_section = _security_section(
-            vpn_request, site, flows, mappings, service_names, base
+        security_rules = _security_rules_context(
+            vpn_request, flows, mappings, service_names, base
         )
+        security_section = {
+            "title": "Security Policy",
+            "commands": render("security_policy", {"security_rules": security_rules}),
+        }
         sections.append(security_section)
         shared_sections.append(security_section)
+
+    for error in dict.fromkeys(segment_errors):
+        notes.insert(0, f"{error} — using the built-in default for that segment.")
 
     if vpn_request.auth_method == "psk":
         notes.append(f"Replace {PSK_PLACEHOLDER} with the agreed pre-shared key before commit.")

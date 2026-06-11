@@ -107,22 +107,50 @@ class TestRendering:
 
 
 @pytest.mark.django_db
-class TestGlobalTemplateView:
+class TestTemplateLibraryViews:
     def test_requires_network_role(self, client):
         user = UserFactory(roles=["requester"])
         client.force_login(user)
-        response = client.get(reverse("ui:config-template"))
-        assert response.status_code == 403
+        assert client.get(reverse("ui:config-template")).status_code == 403
+        assert client.get(
+            reverse("ui:config-template-edit", args=["global"])
+        ).status_code == 403
 
-    def test_get_shows_template(self, network_client):
+    def test_list_shows_document_and_all_segments(self, network_client):
         response = network_client.get(reverse("ui:config-template"))
         assert response.status_code == 200
-        assert "Available Variables" in response.content.decode()
+        body = response.content.decode()
+        for title in (
+            "Document Layout", "IKE Crypto Profile", "IPsec Crypto Profile",
+            "Tunnel Interfaces", "IKE Gateways", "IPsec Tunnels",
+            "Static Routes", "BGP Setup (Shared)", "BGP Peering",
+            "BGP NAT Advertisement", "Service Objects", "NAT Policy",
+            "Security Policy",
+        ):
+            assert title in body, f"missing template in library: {title}"
+        assert "Shared Variables" in body
 
-    def test_save_is_audit_logged(self, network_client):
-        response = network_client.post(reverse("ui:config-template"), {
-            "content": "HELLO {{ reference }}",
-        })
+    def test_editor_calls_out_segment_variables(self, network_client):
+        response = network_client.get(
+            reverse("ui:config-template-edit", args=["nat_policy"])
+        )
+        body = response.content.decode()
+        assert "nat_rules" in body
+        assert "Segment Variables" in body
+        assert "Shared Variables" in body
+        assert "prefixes.net" in body
+
+    def test_unknown_template_404(self, network_client):
+        response = network_client.get(
+            reverse("ui:config-template-edit", args=["nonsense"])
+        )
+        assert response.status_code == 404
+
+    def test_save_document_template_is_audit_logged(self, network_client):
+        response = network_client.post(
+            reverse("ui:config-template-edit", args=["global"]),
+            {"content": "HELLO {{ reference }}"},
+        )
         assert response.status_code == 200
         template = ConfigTemplate.get_global()
         assert template.content == "HELLO {{ reference }}"
@@ -135,9 +163,10 @@ class TestGlobalTemplateView:
 
     def test_syntax_error_not_saved(self, network_client):
         original = ConfigTemplate.get_global().content
-        response = network_client.post(reverse("ui:config-template"), {
-            "content": "{% for x in %}",
-        })
+        response = network_client.post(
+            reverse("ui:config-template-edit", args=["global"]),
+            {"content": "{% for x in %}"},
+        )
         assert response.status_code == 200
         assert "syntax error" in response.content.decode().lower()
         assert ConfigTemplate.get_global().content == original
@@ -146,9 +175,59 @@ class TestGlobalTemplateView:
         template = ConfigTemplate.get_global()
         template.content = "custom"
         template.save()
-        network_client.post(reverse("ui:config-template"), {"reset": "1"})
+        network_client.post(
+            reverse("ui:config-template-edit", args=["global"]), {"reset": "1"}
+        )
         template.refresh_from_db()
         assert template.content == DEFAULT_CONFIG_TEMPLATE
+
+
+@pytest.mark.django_db
+class TestSegmentTemplates:
+    def test_customized_segment_changes_generated_section(self, network_client):
+        req, site = _request_with_config()
+        response = network_client.post(
+            reverse("ui:config-template-edit", args=["ike_crypto"]),
+            {"content": "custom-ike-line {{ ike.profile_name }}"},
+        )
+        assert response.status_code == 200
+        cfg = generate_panos_config(req)[0]
+        ike_section = next(s for s in cfg["sections"] if s["title"] == "IKE Crypto Profile")
+        assert ike_section["commands"] == [
+            f"custom-ike-line {req.reference_number.lower()}-ike"
+        ]
+
+    def test_segment_save_is_audit_logged(self, network_client):
+        network_client.post(
+            reverse("ui:config-template-edit", args=["security_policy"]),
+            {"content": "x {{ base }}"},
+        )
+        row = ConfigTemplate.objects.get(name="security_policy")
+        ct = ContentType.objects.get_for_model(ConfigTemplate)
+        assert LogEntry.objects.filter(content_type=ct, object_pk=str(row.pk)).exists()
+
+    def test_broken_segment_falls_back_with_note(self):
+        req, site = _request_with_config()
+        # Saved directly (bypassing the editor's syntax check), e.g. via admin
+        ConfigTemplate.objects.create(name="nat_policy", content="{% for r in %}")
+        cfg = generate_panos_config(req)[0]
+        nat_section = next(s for s in cfg["sections"] if s["title"] == "NAT Policy")
+        # Default still renders so the config stays deployable
+        assert any("nat rules" in c for c in nat_section["commands"])
+        assert any("Segment 'nat_policy' template error" in n for n in cfg["notes"])
+
+    def test_per_tunnel_blocks_use_segment_template(self, network_client):
+        req, site = _request_with_config()
+        network_client.post(
+            reverse("ui:config-template-edit", args=["ipsec_tunnel"]),
+            {"content": "tunnel-block {{ tunnels[0].vpn_name }}"},
+        )
+        cfg = generate_panos_config(req)[0]
+        block = cfg["tunnels"][0]
+        ipsec_block = next(s for s in block["sections"] if s["title"] == "IPsec Tunnel")
+        assert ipsec_block["commands"] == [
+            f"tunnel-block {req.reference_number.lower()}-vpn1"
+        ]
 
 
 @pytest.mark.django_db

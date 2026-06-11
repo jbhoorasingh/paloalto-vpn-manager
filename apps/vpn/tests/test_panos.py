@@ -171,7 +171,7 @@ class TestRouting:
 
 @pytest.mark.django_db
 class TestNatAndSecurity:
-    def test_outbound_nat_rule(self):
+    def test_outbound_nat_rule_per_tunnel_with_symmetric_snat(self):
         site = SiteFactory(management_type="standalone", template_name="", device_group="")
         req, _, _ = _make_request_with_tunnel(site=site)
         flow = TrafficFlowFactory(
@@ -185,11 +185,38 @@ class TestNatAndSecurity:
         )
         base = req.reference_number.lower()
         commands = _all_commands(generate_site_config(req, site))
-        nat = f"set rulebase nat rules {base}-nat-out1"
+        nat = f"set rulebase nat rules {base}-out1-t101"
         assert f"{nat} from trust" in commands
         assert f"{nat} to vpn-vendor" in commands
+        assert f"{nat} to-interface tunnel.101" in commands
         assert f"{nat} destination 10.111.96.10/32" in commands
         assert f"{nat} destination-translation translated-address 172.16.5.10/32" in commands
+        # Source is always NAT'd to the egress tunnel interface for symmetry
+        assert (
+            f"{nat} source-translation dynamic-ip-and-port "
+            "interface-address interface tunnel.101"
+        ) in commands
+
+    def test_outbound_nat_rule_one_per_tunnel(self):
+        site = SiteFactory(management_type="standalone", template_name="", device_group="")
+        req, _, _ = _make_request_with_tunnel(site=site)
+        TunnelInterface.objects.create(
+            vpn_request=req, site=site, tunnel_number=102,
+            local_ip="10.255.0.5", remote_ip="10.255.0.6",
+            subnet_cidr="10.255.0.4/30", vendor_endpoint_ip="198.51.100.10",
+        )
+        flow = TrafficFlowFactory(
+            vpn_request=req, destination_cidr="172.16.5.10/32",
+        )
+        NatMapping.objects.create(
+            vpn_request=req, site=site, direction="outbound",
+            nat_address="10.111.96.10/32", real_address="172.16.5.10/32",
+            traffic_flow=flow,
+        )
+        base = req.reference_number.lower()
+        commands = _all_commands(generate_site_config(req, site))
+        assert any(f"{base}-out1-t101" in c for c in commands)
+        assert any(f"{base}-out1-t102" in c for c in commands)
 
     def test_inbound_nat_rule_reverses_zones(self):
         site = SiteFactory(management_type="standalone", template_name="", device_group="")
@@ -208,6 +235,49 @@ class TestNatAndSecurity:
         nat = f"set rulebase nat rules {base}-nat-in1"
         assert f"{nat} from vpn-vendor" in commands
         assert f"{nat} to trust" in commands
+        # Inbound DNATs to the inside address and SNATs to the inside
+        # interface so server replies return symmetrically
+        assert f"{nat} destination-translation translated-address 10.10.70.100/32" in commands
+        assert (
+            f"{nat} source-translation dynamic-ip-and-port "
+            "interface-address interface ethernet1/2"
+        ) in commands
+
+    def test_bgp_dr_prepend_on_secondary_only(self):
+        site1 = SiteFactory(management_type="standalone", template_name="", device_group="", bgp_asn=65001)
+        site2 = SiteFactory(management_type="standalone", template_name="", device_group="", bgp_asn=65002)
+        req = VpnRequestFactory(
+            directionality="vendor_initiates", routing_type="bgp",
+            bgp_remote_asn=65100,
+            our_endpoint_1_site=site1, our_endpoint_2_site=site2,
+            vendor_endpoint_1_ip="198.51.100.10",
+            vendor_endpoint_2_ip="198.51.100.20",
+        )
+        flow = TrafficFlowFactory(vpn_request=req, destination_cidr="10.10.70.100/32")
+        for i, site in enumerate((site1, site2)):
+            TunnelInterface.objects.create(
+                vpn_request=req, site=site, tunnel_number=101,
+                local_ip=f"10.255.{i}.1", remote_ip=f"10.255.{i}.2",
+                subnet_cidr=f"10.255.{i}.0/30",
+                vendor_endpoint_ip="198.51.100.10",
+            )
+            # DR pair: same inbound NAT address provisioned at both sites
+            NatMapping.objects.create(
+                vpn_request=req, site=site, direction="inbound",
+                nat_address="10.111.100.5/32", real_address="10.10.70.100/32",
+                traffic_flow=flow,
+            )
+        base = req.reference_number.lower()
+        primary_cmds = _all_commands(generate_site_config(req, site1))
+        secondary_cmds = _all_commands(generate_site_config(req, site2))
+
+        adv = f"protocol bgp policy export rules {base}-nat-adv"
+        # Both sites advertise the same NAT address to the vendor
+        assert any(f"{adv} match address-prefix 10.111.100.5/32 exact yes" in c for c in primary_cmds)
+        assert any(f"{adv} match address-prefix 10.111.100.5/32 exact yes" in c for c in secondary_cmds)
+        # Only the secondary prepends, making the primary path preferred
+        assert not any("as-path prepend" in c for c in primary_cmds)
+        assert any(f"{adv} action allow update as-path prepend 2" in c for c in secondary_cmds)
 
     def test_security_rule_uses_nat_address_and_service_object(self):
         site = SiteFactory(management_type="standalone", template_name="", device_group="")

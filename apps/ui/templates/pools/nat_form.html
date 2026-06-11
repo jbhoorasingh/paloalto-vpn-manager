@@ -40,12 +40,28 @@
         <h2 class="text-base font-semibold text-slate-900">Pool Details</h2>
       </div>
       <div class="px-6 py-6 space-y-5">
-        {# Site #}
+        {# Scope #}
         <div>
+          <label for="id_scope" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Scope <span class="text-red-500">*</span>
+          </label>
+          <select name="scope" id="id_scope" onchange="togglePoolSite()"
+                  class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+            <option value="site" {% if form_data.scope == 'site' or pool.scope == 'site' or not pool and not form_data %}selected{% endif %}>Site-specific (single-site requests)</option>
+            <option value="shared" {% if form_data.scope == 'shared' or pool.scope == 'shared' %}selected{% endif %}>Shared — DR pair (two-site requests)</option>
+          </select>
+          <p class="mt-1.5 text-xs text-slate-500">
+            Shared pools provision the same NAT address at both DR endpoints, so a tunnel
+            failure at one site fails over to the same address at the other.
+          </p>
+        </div>
+
+        {# Site #}
+        <div id="site-field">
           <label for="id_site" class="block text-sm font-medium text-slate-700 mb-1.5">
             Site <span class="text-red-500">*</span>
           </label>
-          <select name="site" id="id_site" required
+          <select name="site" id="id_site"
                   class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
             <option value="">-- Select Site --</option>
             {% for site in sites %}
@@ -56,6 +72,14 @@
             {% endfor %}
           </select>
         </div>
+
+        <script>
+        function togglePoolSite() {
+          var shared = document.getElementById('id_scope').value === 'shared';
+          document.getElementById('site-field').style.display = shared ? 'none' : '';
+        }
+        togglePoolSite();
+        </script>
 
         {# Direction #}
         <div>

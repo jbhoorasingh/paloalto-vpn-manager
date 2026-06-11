@@ -54,6 +54,28 @@ class TestNatPoolModel:
         other = NatPool(site=site, direction="inbound", cidr="10.111.100.0/24")
         other.full_clean()  # disjoint range — fine
 
+    def test_shared_pool_must_not_have_site(self):
+        site = SiteFactory()
+        pool = NatPool(site=site, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        with pytest.raises(ValidationError, match="must not be tied"):
+            pool.full_clean()
+
+    def test_site_pool_requires_site(self):
+        pool = NatPool(site=None, scope="site", direction="outbound", cidr="10.111.200.0/24")
+        with pytest.raises(ValidationError, match="require a site"):
+            pool.full_clean()
+
+    def test_shared_pool_valid(self):
+        pool = NatPool(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        pool.full_clean()  # should not raise
+
+    def test_shared_pool_cannot_overlap_any_site_pool(self):
+        site = SiteFactory()
+        NatPoolFactory(site=site, direction="outbound", cidr="10.111.96.0/24")
+        pool = NatPool(site=None, scope="shared", direction="inbound", cidr="10.111.96.0/25")
+        with pytest.raises(ValidationError, match="Overlaps"):
+            pool.full_clean()
+
 
 # ── _next_available_nat_address ──────────────────────────────────────
 
@@ -173,7 +195,8 @@ class TestComputeNatSpecs:
         assert len(specs) == 1
         assert specs[0]["direction"] == "inbound"
 
-    def test_multi_endpoint(self):
+    def test_multi_endpoint_is_one_shared_spec(self):
+        # DR pair: ONE address carved from shared pools, provisioned at both sites
         site1 = SiteFactory()
         site2 = SiteFactory()
         req = VpnRequestFactory(
@@ -183,8 +206,17 @@ class TestComputeNatSpecs:
         )
         TrafficFlowFactory(vpn_request=req, destination_cidr="10.10.70.100/32")
         specs = compute_nat_specs(req)
-        assert len(specs) == 2
-        assert {s["site"] for s in specs} == {site1, site2}
+        assert len(specs) == 1
+        assert specs[0]["sites"] == [site1, site2]
+        assert specs[0]["shared"] is True
+
+    def test_single_site_spec_not_shared(self):
+        site = SiteFactory()
+        req = VpnRequestFactory(directionality="we_initiate", our_endpoint_1_site=site)
+        TrafficFlowFactory(vpn_request=req, destination_cidr="10.10.70.100/32")
+        specs = compute_nat_specs(req)
+        assert specs[0]["sites"] == [site]
+        assert specs[0]["shared"] is False
 
     def test_flow_direction_overrides_request_directionality(self):
         site = SiteFactory()
@@ -212,6 +244,59 @@ class TestComputeNatSpecs:
         by_flow = {s["flow"]: s["direction"] for s in specs}
         assert by_flow[out_flow] == "outbound"
         assert by_flow[in_flow] == "inbound"
+
+
+# ── DR-shared allocation ─────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestDrSharedAllocation:
+    def _dr_request(self, site1, site2, **kwargs):
+        req = VpnRequestFactory(
+            directionality="we_initiate",
+            our_endpoint_1_site=site1,
+            our_endpoint_2_site=site2,
+            **kwargs,
+        )
+        TrafficFlowFactory(vpn_request=req, destination_cidr="172.16.5.10/32")
+        return req
+
+    def test_dr_pair_gets_same_address_at_both_sites(self):
+        site1, site2 = SiteFactory(), SiteFactory()
+        NatPoolFactory(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        req = self._dr_request(site1, site2)
+        allocate_nat_mappings(req)
+        assert req.nat_mappings.count() == 2
+        addresses = set(req.nat_mappings.values_list("nat_address", flat=True))
+        assert addresses == {"10.111.200.0/32"}  # same NAT IP at both endpoints
+        assert set(req.nat_mappings.values_list("site_id", flat=True)) == {site1.pk, site2.pk}
+
+    def test_dr_pair_requires_shared_pools(self):
+        site1, site2 = SiteFactory(), SiteFactory()
+        # Site-specific pools exist but shared ones don't — DR must not use them
+        NatPoolFactory(site=site1, direction="outbound", cidr="10.111.96.0/24")
+        NatPoolFactory(site=site2, direction="outbound", cidr="10.111.97.0/24")
+        req = self._dr_request(site1, site2)
+        with pytest.raises(ValidationError, match="shared"):
+            allocate_nat_mappings(req)
+
+    def test_consecutive_dr_requests_get_distinct_addresses(self):
+        site1, site2 = SiteFactory(), SiteFactory()
+        NatPoolFactory(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        first = self._dr_request(site1, site2)
+        allocate_nat_mappings(first)
+        second = self._dr_request(site1, site2)
+        allocate_nat_mappings(second)
+        assert set(first.nat_mappings.values_list("nat_address", flat=True)) == {"10.111.200.0/32"}
+        assert set(second.nat_mappings.values_list("nat_address", flat=True)) == {"10.111.200.1/32"}
+
+    def test_single_site_does_not_use_shared_pools(self):
+        site = SiteFactory()
+        NatPoolFactory(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        req = VpnRequestFactory(directionality="we_initiate", our_endpoint_1_site=site)
+        TrafficFlowFactory(vpn_request=req, destination_cidr="172.16.5.10/32")
+        with pytest.raises(ValidationError, match=f"site {site.code}"):
+            allocate_nat_mappings(req)
 
 
 # ── allocate_nat_mappings (integration) ──────────────────────────────

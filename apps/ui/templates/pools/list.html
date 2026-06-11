@@ -76,7 +76,13 @@
         <tbody class="divide-y divide-slate-200 bg-white">
           {% for row in nat_rows %}
           <tr class="hover:bg-slate-50 transition-colors">
-            <td class="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900">{{ row.pool.site }}</td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900">
+              {% if row.pool.site %}
+                {{ row.pool.site }}
+              {% else %}
+                <span class="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-inset ring-violet-600/20">Shared (DR)</span>
+              {% endif %}
+            </td>
             <td class="whitespace-nowrap px-6 py-4 text-sm">
               {% if row.pool.direction == 'outbound' %}
               <span class="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">Outbound →</span>

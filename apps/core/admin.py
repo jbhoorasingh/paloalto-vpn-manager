@@ -44,6 +44,6 @@ class SiteAdmin(admin.ModelAdmin):
 
 @admin.register(NatPool)
 class NatPoolAdmin(admin.ModelAdmin):
-    list_display = ("site", "direction", "cidr", "is_active", "created_at")
-    list_filter = ("direction", "is_active", "site")
+    list_display = ("site", "scope", "direction", "cidr", "is_active", "created_at")
+    list_filter = ("scope", "direction", "is_active", "site")
     search_fields = ("cidr", "site__code", "site__name")

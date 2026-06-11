@@ -26,10 +26,13 @@ from .nat import directions_for_flow
 # Site conventions assumed by the generator. Surfaced to the user as notes so
 # an engineer can adjust before pushing.
 UNTRUST_INTERFACE = "ethernet1/1"
+INSIDE_INTERFACE = "ethernet1/2"
 VPN_ZONE = "vpn-vendor"
 TRUST_ZONE = "trust"
 VIRTUAL_ROUTER = "default"
 PSK_PLACEHOLDER = "<PRE-SHARED-KEY>"
+# Secondary DR site prepends its AS this many times so the primary is preferred.
+DR_PREPEND_COUNT = 2
 
 # Free-text crypto fields normalized to PAN-OS keywords. Unknown values pass
 # through lowercased so an engineer can spot and fix them.
@@ -325,7 +328,18 @@ def _service_objects_section(vpn_request, site, flows, base):
     return {"title": "Service Objects", "commands": commands}, service_names
 
 
-def _nat_section(vpn_request, site, mappings, base):
+def _nat_section(vpn_request, site, mappings, tunnels, base):
+    """
+    NAT rules per mapping.
+
+    Outbound (we → vendor): one rule per tunnel — the destination NAT to the
+    real vendor host plus source NAT to that tunnel's interface address, so
+    return traffic always comes back through the same tunnel (symmetry).
+
+    Inbound (vendor → us): destination NAT to the real inside address plus
+    source NAT to the firewall's inside interface, so the server's replies
+    return through the translating firewall (symmetry under DR).
+    """
     p = _policy_prefix(site)
     rb = _rulebase(site)
     commands = []
@@ -335,22 +349,90 @@ def _nat_section(vpn_request, site, mappings, base):
         idx = counters[nm.direction]
         if nm.direction == NatDirection.OUTBOUND:
             # Internal hosts target the published NAT address; the firewall
-            # DNATs it to the real vendor host and routes it out the tunnel.
-            name = f"{base}-nat-out{idx}"
-            from_zone, to_zone = TRUST_ZONE, VPN_ZONE
+            # DNATs it to the real vendor host and SNATs to the egress tunnel.
+            if tunnels:
+                for ti in tunnels:
+                    name = f"{base}-out{idx}-t{ti.tunnel_number}"
+                    path = f"{p}{rb} nat rules {name}"
+                    commands.append(f"{path} from {TRUST_ZONE}")
+                    commands.append(f"{path} to {VPN_ZONE}")
+                    commands.append(f"{path} to-interface tunnel.{ti.tunnel_number}")
+                    commands.append(f"{path} source any")
+                    commands.append(f"{path} destination {nm.nat_address}")
+                    commands.append(f"{path} service any")
+                    commands.append(
+                        f"{path} destination-translation translated-address {nm.real_address}"
+                    )
+                    commands.append(
+                        f"{path} source-translation dynamic-ip-and-port "
+                        f"interface-address interface tunnel.{ti.tunnel_number}"
+                    )
+            else:
+                # No tunnels allocated yet — emit the DNAT half so the intent
+                # is visible; per-tunnel SNAT rules appear once tunnels exist.
+                name = f"{base}-nat-out{idx}"
+                path = f"{p}{rb} nat rules {name}"
+                commands.append(f"{path} from {TRUST_ZONE}")
+                commands.append(f"{path} to {VPN_ZONE}")
+                commands.append(f"{path} source any")
+                commands.append(f"{path} destination {nm.nat_address}")
+                commands.append(f"{path} service any")
+                commands.append(
+                    f"{path} destination-translation translated-address {nm.real_address}"
+                )
         else:
             # The vendor targets the published NAT address; the firewall
-            # DNATs it to the real internal service.
+            # DNATs it to the real internal service and SNATs to its inside
+            # interface so replies return symmetrically.
             name = f"{base}-nat-in{idx}"
-            from_zone, to_zone = VPN_ZONE, TRUST_ZONE
-        path = f"{p}{rb} nat rules {name}"
-        commands.append(f"{path} from {from_zone}")
-        commands.append(f"{path} to {to_zone}")
-        commands.append(f"{path} source any")
-        commands.append(f"{path} destination {nm.nat_address}")
-        commands.append(f"{path} service any")
-        commands.append(f"{path} destination-translation translated-address {nm.real_address}")
+            path = f"{p}{rb} nat rules {name}"
+            commands.append(f"{path} from {VPN_ZONE}")
+            commands.append(f"{path} to {TRUST_ZONE}")
+            commands.append(f"{path} source any")
+            commands.append(f"{path} destination {nm.nat_address}")
+            commands.append(f"{path} service any")
+            commands.append(
+                f"{path} destination-translation translated-address {nm.real_address}"
+            )
+            commands.append(
+                f"{path} source-translation dynamic-ip-and-port "
+                f"interface-address interface {INSIDE_INTERFACE}"
+            )
     return {"title": "NAT Policy", "commands": commands}
+
+
+def _bgp_nat_advertisement_section(vpn_request, site, mappings, base):
+    """
+    Advertise the inbound NAT addresses to the vendor over the tunnel BGP
+    peering. On a DR pair both endpoints advertise the SAME addresses; the
+    secondary (endpoint 2) prepends its AS so the primary path is preferred
+    and failover to the surviving site is automatic.
+    """
+    inbound_addrs = []
+    for nm in mappings:
+        if nm.direction == NatDirection.INBOUND and nm.nat_address not in inbound_addrs:
+            inbound_addrs.append(nm.nat_address)
+    if not inbound_addrs:
+        return {"title": "BGP NAT Advertisement", "commands": []}
+
+    p = _net_prefix(site)
+    vr = f"{p}network virtual-router {VIRTUAL_ROUTER}"
+    rule = f"{vr} protocol bgp policy export rules {base}-nat-adv"
+    is_secondary = (
+        vpn_request.our_endpoint_2_site_id == site.pk
+        and vpn_request.our_endpoint_1_site_id
+        and vpn_request.our_endpoint_1_site_id != site.pk
+    )
+
+    commands = [f"{rule} enable yes", f"{rule} used-by {base}-pg"]
+    for addr in inbound_addrs:
+        commands.append(f"{rule} match address-prefix {addr} exact yes")
+    commands.append(f"{rule} action allow")
+    if is_secondary:
+        commands.append(
+            f"{rule} action allow update as-path prepend {DR_PREPEND_COUNT}"
+        )
+    return {"title": "BGP NAT Advertisement", "commands": commands}
 
 
 def _security_section(vpn_request, site, flows, mappings, service_names, base):
@@ -492,9 +574,20 @@ def generate_site_config(vpn_request, site):
         shared_sections.append(svc_section)
 
     if mappings:
-        nat_section = _nat_section(vpn_request, site, mappings, base)
+        nat_section = _nat_section(vpn_request, site, mappings, tunnels, base)
         sections.append(nat_section)
         shared_sections.append(nat_section)
+        if vpn_request.routing_type == "bgp":
+            adv_section = _bgp_nat_advertisement_section(vpn_request, site, mappings, base)
+            if adv_section["commands"]:
+                sections.append(adv_section)
+                shared_sections.append(adv_section)
+                if vpn_request.our_endpoint_2_site_id == site.pk:
+                    notes.append(
+                        "DR secondary: inbound NAT addresses are advertised with "
+                        f"AS-path prepend ×{DR_PREPEND_COUNT} so the primary "
+                        f"({vpn_request.our_endpoint_1_site}) is preferred."
+                    )
     else:
         notes.append(
             "No NAT mappings allocated for this site yet — NAT IPs are assigned "
@@ -511,8 +604,9 @@ def generate_site_config(vpn_request, site):
     if vpn_request.auth_method == "psk":
         notes.append(f"Replace {PSK_PLACEHOLDER} with the agreed pre-shared key before commit.")
     notes.append(
-        f"Assumes external interface {UNTRUST_INTERFACE}, zones {TRUST_ZONE}/{VPN_ZONE} "
-        f"and virtual router '{VIRTUAL_ROUTER}' — adjust to site conventions."
+        f"Assumes external interface {UNTRUST_INTERFACE}, inside interface "
+        f"{INSIDE_INTERFACE}, zones {TRUST_ZONE}/{VPN_ZONE} and virtual router "
+        f"'{VIRTUAL_ROUTER}' — adjust to site conventions."
     )
     if vpn_request.routing_type == "static" and not _parse_vendor_cidrs(vpn_request):
         notes.append("Static routing selected but no vendor CIDRs entered — no routes generated.")

@@ -8,11 +8,24 @@ class NatDirection(models.TextChoices):
     OUTBOUND = "outbound", "Outbound (We → Vendor)"
 
 
+class NatPoolScope(models.TextChoices):
+    SITE = "site", "Site-specific"
+    SHARED = "shared", "Shared (DR pair)"
+
+
 class NatPool(models.Model):
     """
     A pre-allocated IPAM range used to NAT VPN traffic at the firewall boundary.
 
-    Per the NAT framework, every region (Site) gets two dedicated ranges:
+    Two scopes:
+      * site-specific — used by single-site VPN requests; tied to one Site.
+      * shared (DR)   — used by two-site (DR pair) requests; not tied to a Site.
+        The same NAT address is provisioned at BOTH endpoints and advertised
+        from both, with AS-path prepend making the primary site preferred, so
+        a tunnel failure at one site fails over to the same NAT address at
+        the other.
+
+    Per direction:
       * outbound — addresses internal services target; DNATs to the real vendor host
       * inbound  — addresses vendors target; DNATs to the real internal service
 
@@ -22,7 +35,13 @@ class NatPool(models.Model):
     """
 
     site = models.ForeignKey(
-        "core.Site", on_delete=models.CASCADE, related_name="nat_pools"
+        "core.Site", on_delete=models.CASCADE, related_name="nat_pools",
+        null=True, blank=True,
+        help_text="Owning site for site-specific pools; empty for shared (DR) pools",
+    )
+    scope = models.CharField(
+        max_length=10, choices=NatPoolScope.choices, default=NatPoolScope.SITE,
+        help_text="Site-specific (single-site requests) or shared (DR-pair requests)",
     )
     direction = models.CharField(
         max_length=10,
@@ -42,29 +61,42 @@ class NatPool(models.Model):
         ordering = ["site", "direction", "cidr"]
 
     def __str__(self):
-        return f"{self.site.code} — {self.get_direction_display()} {self.cidr}"
+        owner = self.site.code if self.site else "shared"
+        return f"{owner} — {self.get_direction_display()} {self.cidr}"
 
     def clean(self):
         super().clean()
+        # Scope/site consistency
+        if self.scope == NatPoolScope.SHARED and self.site_id:
+            raise ValidationError({"site": "Shared (DR) pools must not be tied to a site."})
+        if self.scope == NatPoolScope.SITE and not self.site_id:
+            raise ValidationError({"site": "Site-specific pools require a site."})
+
         # Validate CIDR format
         try:
             network = netaddr.IPNetwork(self.cidr)
         except (netaddr.AddrFormatError, ValueError):
             raise ValidationError({"cidr": f"'{self.cidr}' is not a valid CIDR notation."})
 
-        # Check overlap with any other active NAT pool on the same site (either
-        # direction). Inbound and outbound ranges must stay disjoint so a NAT'd
-        # address is unambiguous when advertised into the routing fabric.
+        # Overlap rules: a NAT'd address must be unambiguous when advertised
+        # into the routing fabric. Site pools must not overlap pools on the
+        # same site or any shared pool; shared pools must not overlap ANY
+        # active pool anywhere (they are provisioned at every DR endpoint).
         if self.is_active:
-            existing = NatPool.objects.filter(
-                site=self.site, is_active=True
-            ).exclude(pk=self.pk)
-            for pool in existing:
+            from django.db.models import Q
+
+            if self.scope == NatPoolScope.SHARED:
+                existing = NatPool.objects.filter(is_active=True)
+            else:
+                existing = NatPool.objects.filter(is_active=True).filter(
+                    Q(site=self.site) | Q(scope=NatPoolScope.SHARED)
+                )
+            for pool in existing.exclude(pk=self.pk):
                 try:
                     existing_net = netaddr.IPNetwork(pool.cidr)
                 except (netaddr.AddrFormatError, ValueError):
                     continue
                 if network.network in existing_net or existing_net.network in network:
                     raise ValidationError({
-                        "cidr": f"Overlaps with existing NAT pool {pool.cidr} on this site."
+                        "cidr": f"Overlaps with existing NAT pool {pool} ({pool.cidr})."
                     })

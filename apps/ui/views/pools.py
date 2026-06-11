@@ -1,9 +1,10 @@
 import netaddr
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 
-from apps.core.models import NatDirection, NatPool, Site, TunnelAddressPool
+from apps.core.models import NatDirection, NatPool, NatPoolScope, Site, TunnelAddressPool
 from apps.vpn.models.tunnel import TunnelInterface
 
 
@@ -42,7 +43,8 @@ def pool_list_view(request):
     nat_pools = NatPool.objects.select_related("site")
     tunnel_pools = TunnelAddressPool.objects.select_related("site")
     if site_id:
-        nat_pools = nat_pools.filter(site_id=site_id)
+        # Shared (DR) pools apply to every site, so they always show.
+        nat_pools = nat_pools.filter(Q(site_id=site_id) | Q(scope=NatPoolScope.SHARED))
         tunnel_pools = tunnel_pools.filter(site_id=site_id)
 
     nat_rows = []
@@ -77,7 +79,11 @@ def _pool_form_context(form_title, pool=None, errors=None, form_data=None):
 
 
 def _save_nat_pool(request, pool):
-    pool.site_id = request.POST.get("site") or None
+    pool.scope = request.POST.get("scope", NatPoolScope.SITE)
+    pool.site_id = (
+        None if pool.scope == NatPoolScope.SHARED
+        else request.POST.get("site") or None
+    )
     pool.direction = request.POST.get("direction", "")
     pool.cidr = request.POST.get("cidr", "").strip()
     pool.description = request.POST.get("description", "").strip()

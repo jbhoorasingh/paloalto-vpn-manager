@@ -75,6 +75,25 @@ class TestNatPoolCrud:
         assert response.status_code == 200
         assert NatPool.objects.count() == 1
 
+    def test_create_shared_pool(self, client_authenticated):
+        response = client_authenticated.post(reverse("ui:nat-pool-create"), {
+            "scope": "shared",
+            "direction": "outbound",
+            "cidr": "10.111.200.0/24",
+            "is_active": "on",
+        })
+        assert response.status_code == 302
+        pool = NatPool.objects.get(cidr="10.111.200.0/24")
+        assert pool.scope == "shared"
+        assert pool.site is None
+
+    def test_shared_pools_visible_under_any_site_filter(self, client_authenticated):
+        site = SiteFactory()
+        NatPoolFactory(site=site, direction="outbound", cidr="10.111.96.0/24")
+        NatPoolFactory(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        response = client_authenticated.get(reverse("ui:pool-list"), {"site": site.pk})
+        assert len(response.context["nat_rows"]) == 2
+
     def test_edit(self, client_authenticated):
         pool = NatPoolFactory(cidr="10.111.96.0/24", description="old")
         response = client_authenticated.post(reverse("ui:nat-pool-edit", args=[pool.pk]), {

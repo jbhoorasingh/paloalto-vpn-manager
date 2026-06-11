@@ -870,7 +870,12 @@
                   </td>
                   <td class="whitespace-nowrap px-4 py-3 text-sm font-mono font-medium text-slate-900">{{ nm.nat_address }}</td>
                   <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-900">{{ nm.real_address }}</td>
-                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-600">{{ nm.nat_pool.cidr|default:"--" }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-600">
+                    {{ nm.nat_pool.cidr|default:"--" }}
+                    {% if nm.nat_pool.scope == 'shared' %}
+                    <span class="ml-1 inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 font-sans">Shared (DR)</span>
+                    {% endif %}
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -881,8 +886,9 @@
             <p class="text-sm font-medium text-amber-900">NAT IPs have not been assigned.</p>
             <p class="mt-1 text-xs text-amber-800">
               This request needs NAT mappings but allocation did not complete — usually because the
-              endpoint site(s) have no matching NAT pools.
-              Configure inbound/outbound pools under <a href="{% url 'ui:pool-list' %}" class="font-semibold underline">Address Pools</a>, then retry.
+              matching NAT pools are missing (single-site requests use the site's pools; two-site DR
+              requests use shared pools).
+              Configure them under <a href="{% url 'ui:pool-list' %}" class="font-semibold underline">Address Pools</a>, then retry.
             </p>
             {% if can_allocate_nat %}
             <button type="button" id="btn-allocate-nat" onclick="allocateNat()"

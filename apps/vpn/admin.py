@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     Application,
     NatMapping,
+    ConfigTemplate,
     TrafficFlow,
     TunnelInterface,
     Vendor,
@@ -71,3 +72,9 @@ class NatMappingAdmin(admin.ModelAdmin):
     list_display = ("vpn_request", "site", "direction", "nat_address", "real_address", "created_at")
     list_filter = ("direction", "site")
     search_fields = ("nat_address", "real_address", "vpn_request__reference_number")
+
+
+@admin.register(ConfigTemplate)
+class ConfigTemplateAdmin(admin.ModelAdmin):
+    list_display = ("name", "updated_by", "updated_at")
+    readonly_fields = ("updated_by", "updated_at", "created_at")

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Config Template{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  {# Page header #}
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Config Template</h1>
+    <p class="mt-1 text-sm text-slate-500">
+      The global Jinja template that renders every request's PAN-OS configuration.
+      Individual requests can override it from their Config tab. All changes are logged.
+    </p>
+  </div>
+
+  {% if saved %}
+  <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm font-medium text-emerald-800">
+    Template saved.
+  </div>
+  {% endif %}
+  {% if error %}
+  <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm font-medium text-red-800">
+    {{ error }} — not saved.
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    {# Editor #}
+    <form method="post" class="lg:col-span-2 space-y-4">
+      {% csrf_token %}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-semibold text-slate-900">Global Template</h2>
+            <p class="mt-0.5 text-xs text-slate-500">
+              {% if is_default %}
+              <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Built-in default</span>
+              {% else %}
+              <span class="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">Customized</span>
+              {% endif %}
+              {% if template.updated_by %}
+              last saved by {{ template.updated_by.get_full_name|default:template.updated_by.username }} on {{ template.updated_at|date:"M d, Y H:i" }}
+              {% endif %}
+            </p>
+          </div>
+        </div>
+        <div class="p-4">
+          <textarea name="content" rows="22" spellcheck="false"
+                    class="block w-full rounded-lg border-0 py-3 px-3 text-slate-100 bg-slate-900 ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 text-xs font-mono leading-relaxed">{{ content }}</textarea>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between">
+        <button type="submit" name="reset" value="1"
+                onclick="return confirm('Reset the global template to the built-in default? This is logged.');"
+                class="rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
+          Reset to Default
+        </button>
+        <button type="submit"
+                class="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
+          Save Template
+        </button>
+      </div>
+    </form>
+
+    {# Sidebar: variables + history #}
+    <div class="space-y-6">
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-5 py-3.5 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-sm font-semibold text-slate-900">Available Variables</h3>
+        </div>
+        <dl class="px-5 py-4 space-y-3">
+          {% for name, doc in variables %}
+          <div>
+            <dt class="text-xs font-mono font-semibold text-indigo-700">{% templatetag openvariable %} {{ name }} {% templatetag closevariable %}</dt>
+            <dd class="mt-0.5 text-xs text-slate-500">{{ doc }}</dd>
+          </div>
+          {% endfor %}
+        </dl>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-5 py-3.5 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-sm font-semibold text-slate-900">Change History</h3>
+        </div>
+        <ul class="divide-y divide-slate-100">
+          {% for entry in history %}
+          <li class="px-5 py-3">
+            <p class="text-xs text-slate-700">
+              <span class="font-semibold">{% firstof entry.actor.get_full_name entry.actor.username "system" %}</span>
+              {% if entry.action == 0 %}created{% else %}updated{% endif %} the template
+            </p>
+            <p class="text-xs text-slate-400">{{ entry.timestamp|date:"M d, Y H:i" }}</p>
+          </li>
+          {% empty %}
+          <li class="px-5 py-4 text-xs text-slate-500">No changes yet.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

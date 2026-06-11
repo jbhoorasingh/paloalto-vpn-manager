@@ -1,5 +1,6 @@
 from .application import Application
 from .approval import ApprovalRecord
+from .config_template import ConfigTemplate
 from .flow import FlowDirection, TrafficFlow
 from .nat import NatMapping
 from .request import VpnRequest, VpnRequestApplication
@@ -11,6 +12,7 @@ __all__ = [
     "VendorContact",
     "Application",
     "ApprovalRecord",
+    "ConfigTemplate",
     "VpnRequest",
     "VpnRequestApplication",
     "FlowDirection",

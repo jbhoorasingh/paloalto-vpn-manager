@@ -146,6 +146,10 @@ class VpnRequest(models.Model):
     nat_supported = models.BooleanField(null=True, blank=True)
     nat_exception_reason = models.TextField(blank=True)
 
+    # Per-request config template override (Jinja); blank = use the global
+    # template. Changes are captured by the auditlog registration below.
+    config_template_override = models.TextField(blank=True, default="")
+
     # FSM
     status = FSMField(default=RequestStatus.DRAFT, choices=RequestStatus.choices, protected=True)
 

@@ -941,21 +941,39 @@
 
     {# Config tab #}
     <div id="tab-config" class="mt-6 hidden space-y-6">
-      <div class="flex items-start justify-between gap-4">
+      <div class="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h2 class="text-lg font-semibold text-slate-900">PAN-OS Set Commands</h2>
+          <h2 class="text-lg font-semibold text-slate-900 flex items-center gap-2">
+            PAN-OS Set Commands
+            {% if config_template_source == 'request' %}
+            <span class="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-inset ring-violet-600/20">Request template override</span>
+            {% elif config_template_source == 'global' %}
+            <span class="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-inset ring-violet-600/20">Customized global template</span>
+            {% endif %}
+          </h2>
           <p class="mt-1 text-sm text-slate-500">
-            Generated per endpoint firewall from the request parameters, tunnel allocations and NAT mappings.
+            Generated per endpoint firewall and rendered through the config template.
             Review and adjust before pushing — this is a starting point, not a finished change.
           </p>
         </div>
-        <a href="{% url 'ui:request-config-download' vpn_request.pk %}"
-           class="inline-flex shrink-0 items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
-          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-          </svg>
-          Download .txt
-        </a>
+        <div class="flex items-center gap-3 shrink-0">
+          {% if can_edit_config_template %}
+          <a href="{% url 'ui:request-config-template' vpn_request.pk %}"
+             class="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+            </svg>
+            {% if config_template_source == 'request' %}Edit Template Override{% else %}Customize Template{% endif %}
+          </a>
+          {% endif %}
+          <a href="{% url 'ui:request-config-download' vpn_request.pk %}"
+             class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Download .txt
+          </a>
+        </div>
       </div>
 
       {% for cfg in panos_configs %}
@@ -990,6 +1008,14 @@
           <p class="mt-1 text-sm text-slate-500">{{ cfg.reason }}</p>
         </div>
         {% else %}
+        {% if cfg.render_error %}
+        <div class="px-6 py-3 bg-red-50 border-b border-red-100">
+          <p class="text-xs font-medium text-red-800">
+            {{ cfg.render_error }} — showing the default generator output instead.
+            Fix the template via "{% if config_template_source == 'request' %}Edit Template Override{% else %}Customize Template{% endif %}".
+          </p>
+        </div>
+        {% endif %}
         {% if cfg.notes %}
         <div class="px-6 py-3 bg-amber-50 border-b border-amber-100">
           <ul class="list-disc list-inside space-y-0.5">
@@ -999,6 +1025,16 @@
           </ul>
         </div>
         {% endif %}
+        {% if config_template_source != 'default' and not cfg.render_error %}
+        {# Custom template — the rendered text is the authoritative output #}
+        <div class="p-6">
+          {% if cfg.text %}
+          <pre class="rounded-lg bg-slate-900 text-slate-100 text-xs font-mono leading-relaxed px-4 py-3 overflow-x-auto">{{ cfg.text }}</pre>
+          {% else %}
+          <p class="text-sm text-slate-500 text-center py-4">The template rendered no output for this site.</p>
+          {% endif %}
+        </div>
+        {% else %}
         <div class="p-6 space-y-4">
           {% for section in cfg.sections %}
           <div>
@@ -1010,6 +1046,7 @@
           <p class="text-sm text-slate-500 text-center py-4">No commands generated yet.</p>
           {% endfor %}
         </div>
+        {% endif %}
         <textarea id="config-text-{{ cfg.site.pk }}" class="hidden" readonly>{{ cfg.text }}</textarea>
         {% endif %}
       </div>

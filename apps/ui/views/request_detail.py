@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.vpn.models import VpnRequest
 from apps.vpn.models.flow import TrafficFlow
-from apps.vpn.services.panos import config_as_text, generate_panos_config
+from apps.vpn.services.config_render import rendered_site_configs
 
 # Human-readable labels for VpnRequest fields in audit log
 FIELD_LABELS = {
@@ -47,6 +47,7 @@ FIELD_LABELS = {
     "tunnel_ip_assignment": "Tunnel IP Assignment",
     "nat_supported": "NAT Supported",
     "nat_exception_reason": "NAT Exception Reason",
+    "config_template_override": "Config Template Override",
     "status": "Status",
     "submitted_at": "Submitted At",
     "reference_number": "Reference Number",
@@ -54,7 +55,10 @@ FIELD_LABELS = {
 }
 
 # Fields to skip in the request snapshot display
-SNAPSHOT_EXCLUDE = {"id", "created_at", "updated_at", "status", "submitted_at", "reference_number", "requester"}
+SNAPSHOT_EXCLUDE = {
+    "id", "created_at", "updated_at", "status", "submitted_at",
+    "reference_number", "requester", "config_template_override",
+}
 
 
 def _build_audit_timeline(vpn_request, approval_records):
@@ -428,11 +432,11 @@ def request_detail_view(request, pk):
         vpn_request, tunnel_interfaces, nat_mappings
     )
 
-    # PAN-OS set commands per endpoint site
-    panos_configs = [
-        {**cfg, "text": config_as_text(cfg)}
-        for cfg in generate_panos_config(vpn_request)
-    ]
+    # PAN-OS set commands per endpoint site, rendered through the resolved
+    # config template (request override → global → built-in default)
+    panos_configs = rendered_site_configs(vpn_request)
+    config_template_source = panos_configs[0]["template_source"] if panos_configs else "default"
+    can_edit_config_template = request.user.is_network_approver
 
     return render(request, "vpn/request_detail.html", {
         "nav_active": "my-requests",
@@ -458,24 +462,25 @@ def request_detail_view(request, pk):
         "can_allocate_nat": can_allocate_nat,
         "nat_packet_walks": nat_packet_walks,
         "panos_configs": panos_configs,
+        "config_template_source": config_template_source,
+        "can_edit_config_template": can_edit_config_template,
     })
 
 
 @login_required
 def request_config_download_view(request, pk):
-    """Download the generated PAN-OS set commands as a plain-text file."""
+    """Download the rendered PAN-OS set commands as a plain-text file."""
     vpn_request = get_object_or_404(VpnRequest, pk=pk)
     site_id = request.GET.get("site")
 
     blocks = []
-    for cfg in generate_panos_config(vpn_request):
+    for cfg in rendered_site_configs(vpn_request):
         if site_id and str(cfg["site"].pk) != site_id:
             continue
         if not cfg["supported"]:
             continue
-        text = config_as_text(cfg)
-        if text:
-            blocks.append(text)
+        if cfg["text"]:
+            blocks.append(cfg["text"].rstrip("\n"))
 
     body = "\n\n".join(blocks)
     if body:

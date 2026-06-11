@@ -1,6 +1,17 @@
 from django.urls import path
 
-from .views import approval, dashboard, deployment, endpoint, pools, request_detail, user, vendor, wizard
+from .views import (
+    approval,
+    config_template,
+    dashboard,
+    deployment,
+    endpoint,
+    pools,
+    request_detail,
+    user,
+    vendor,
+    wizard,
+)
 
 app_name = "ui"
 
@@ -49,6 +60,10 @@ urlpatterns = [
     path("vpn/requests/<int:pk>/", request_detail.request_detail_view, name="request-detail"),
     path("vpn/requests/<int:pk>/delete/", request_detail.request_delete_view, name="request-delete"),
     path("vpn/requests/<int:pk>/config/download/", request_detail.request_config_download_view, name="request-config-download"),
+    path("vpn/requests/<int:pk>/config/template/", config_template.request_config_template_view, name="request-config-template"),
+
+    # Config template (global)
+    path("config-template/", config_template.config_template_view, name="config-template"),
 
     # Users (admin-only)
     path("users/", user.user_list_view, name="user-list"),

@@ -66,9 +66,14 @@ def deployment_detail_view(request, pk):
                 block["text"] = config_as_text(block)
         site_configs.append(cfg)
 
+    from apps.vpn.services.config_render import resolve_template
+
+    _, config_template_source = resolve_template(vpn_request)
+
     return render(request, "deployment/detail.html", {
         "nav_active": "deployment",
         "vpn_request": vpn_request,
         "site_configs": site_configs,
         "tunnel_count": vpn_request.tunnel_interfaces.count(),
+        "config_template_source": config_template_source,
     })

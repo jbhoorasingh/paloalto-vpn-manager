@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Config Template — {{ vpn_request.reference_number }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  {# Page header #}
+  <div>
+    <nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+      <a href="{% url 'ui:request-detail' vpn_request.pk %}" class="hover:text-slate-700 transition-colors">{{ vpn_request.reference_number }}</a>
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+      </svg>
+      <span class="text-slate-900 font-medium">Config Template</span>
+    </nav>
+    <h1 class="text-2xl font-bold text-slate-900">Config Template for {{ vpn_request.reference_number }}</h1>
+    <p class="mt-1 text-sm text-slate-500">
+      Customize how this request's configuration is rendered. Saving creates an override of the
+      global template for this VPN only; the change appears in the request's audit log.
+    </p>
+  </div>
+
+  {% if error %}
+  <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm font-medium text-red-800">
+    {{ error }} — not saved.
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <form method="post" class="lg:col-span-2 space-y-4">
+      {% csrf_token %}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h2 class="text-base font-semibold text-slate-900">
+            {% if has_override %}Request Override{% else %}New Override (prefilled from global){% endif %}
+          </h2>
+          <p class="mt-0.5 text-xs text-slate-500">
+            {% if has_override %}
+            This request uses its own template instead of the global one.
+            {% else %}
+            Editing and saving creates a request-specific template; the global template stays unchanged.
+            {% endif %}
+          </p>
+        </div>
+        <div class="p-4">
+          <textarea name="content" rows="22" spellcheck="false"
+                    class="block w-full rounded-lg border-0 py-3 px-3 text-slate-100 bg-slate-900 ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 text-xs font-mono leading-relaxed">{{ content }}</textarea>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <a href="{% url 'ui:request-detail' vpn_request.pk %}"
+             class="rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
+            Cancel
+          </a>
+          {% if has_override %}
+          <button type="submit" name="remove" value="1"
+                  onclick="return confirm('Remove this request\'s override and go back to the global template? This is logged.');"
+                  class="rounded-lg px-4 py-2.5 text-sm font-semibold text-red-600 ring-1 ring-inset ring-red-300 hover:bg-red-50 transition-colors">
+            Remove Override
+          </button>
+          {% endif %}
+        </div>
+        <button type="submit"
+                class="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
+          Save Override
+        </button>
+      </div>
+    </form>
+
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden h-fit">
+      <div class="px-5 py-3.5 border-b border-slate-200 bg-slate-50">
+        <h3 class="text-sm font-semibold text-slate-900">Available Variables</h3>
+      </div>
+      <dl class="px-5 py-4 space-y-3">
+        {% for name, doc in variables %}
+        <div>
+          <dt class="text-xs font-mono font-semibold text-indigo-700">{% templatetag openvariable %} {{ name }} {% templatetag closevariable %}</dt>
+          <dd class="mt-0.5 text-xs text-slate-500">{{ doc }}</dd>
+        </div>
+        {% endfor %}
+      </dl>
+    </div>
+  </div>
+</div>
+{% endblock %}

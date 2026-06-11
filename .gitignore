@@ -57,3 +57,8 @@ celerybeat.pid
 
 # Docker
 docker-compose.override.yml
+
+.claude/
+__pycache__/
+.pytest_cache/
+.env

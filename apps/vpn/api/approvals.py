@@ -191,7 +191,7 @@ def approval_queue(request):
     qs = VpnRequest.objects.select_related("vendor", "requester").filter(
         status__in=statuses
     )
-    requests_data = [serialize_request_summary(r) for r in qs[:100]]
+    requests_data = [serialize_request_summary(r, user=request.user) for r in qs[:100]]
     return JsonResponse({"requests": requests_data})
 
 

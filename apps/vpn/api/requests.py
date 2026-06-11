@@ -5,7 +5,17 @@ from django.views.decorators.http import require_http_methods
 from apps.vpn.models import VpnRequest
 
 
-def serialize_request_summary(req):
+EDITABLE_STATUSES = ("draft", "infosec_changes_requested", "network_changes_requested")
+
+
+def can_edit_request(req, user):
+    """The requester (or an admin, on their behalf) may edit drafts and changes-requested requests."""
+    if req.status not in EDITABLE_STATUSES:
+        return False
+    return req.requester_id == user.pk or user.is_admin_role
+
+
+def serialize_request_summary(req, user=None):
     return {
         "id": req.pk,
         "reference_number": req.reference_number,
@@ -17,6 +27,7 @@ def serialize_request_summary(req):
         "updated_at": req.updated_at.isoformat(),
         "submitted_at": req.submitted_at.isoformat() if req.submitted_at else None,
         "requester": req.requester.get_full_name() or req.requester.username,
+        "can_edit": can_edit_request(req, user) if user is not None else False,
     }
 
 
@@ -79,7 +90,7 @@ def request_list(request):
         qs = qs.filter(requester=request.user)
     # 'all' scope shows everything (for admins)
 
-    requests_data = [serialize_request_summary(r) for r in qs[:100]]
+    requests_data = [serialize_request_summary(r, user=request.user) for r in qs[:100]]
     return JsonResponse({"requests": requests_data})
 
 

@@ -49,6 +49,14 @@
         >
           View
         </a>
+        <a
+          v-if="row.can_edit"
+          :href="`/vpn/${row.id}/edit/`"
+          class="ml-3 font-medium text-amber-600 hover:text-amber-500"
+          @click.stop
+        >
+          {{ row.status === 'draft' ? 'Edit' : 'Edit & Resubmit' }}
+        </a>
       </template>
       <template #empty>
         <div class="text-center">

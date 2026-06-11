@@ -44,6 +44,7 @@
         </div>
       </div>
       <div class="mt-4 sm:mt-0 flex gap-2">
+        {% if vpn_request.requester == request.user or user.is_admin_role %}
         {% if vpn_request.status == 'draft' %}
         <a href="{% url 'ui:wizard-edit' vpn_request.pk %}"
            class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
@@ -53,7 +54,6 @@
           Edit Draft
         </a>
         {% elif vpn_request.status == 'infosec_changes_requested' or vpn_request.status == 'network_changes_requested' %}
-        {% if vpn_request.requester == request.user %}
         <a href="{% url 'ui:wizard-edit' vpn_request.pk %}"
            class="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-400 transition-colors">
           <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">

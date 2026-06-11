@@ -31,7 +31,10 @@ def wizard_create_view(request):
 
 @login_required
 def wizard_edit_view(request, pk):
-    vpn_request = get_object_or_404(VpnRequest, pk=pk, requester=request.user)
+    qs = VpnRequest.objects.all()
+    if not request.user.is_admin_role:
+        qs = qs.filter(requester=request.user)
+    vpn_request = get_object_or_404(qs, pk=pk)
     context = _wizard_context(vpn_request)
     context["nav_active"] = "wizard-create"
     return render(request, "vpn/wizard.html", context)

@@ -42,10 +42,12 @@ def flow_list_create(request, request_pk):
         flows = [serialize_flow(f) for f in vpn_req.flows.all()]
         return JsonResponse({"flows": flows})
 
-    # POST — only the requester can add flows
+    # POST — the requester (or an admin acting on their behalf) can add flows
     try:
-        vpn_req = VpnRequest.objects.get(pk=request_pk, requester=request.user)
+        vpn_req = VpnRequest.objects.get(pk=request_pk)
     except VpnRequest.DoesNotExist:
+        return JsonResponse({"error": "Request not found"}, status=404)
+    if vpn_req.requester != request.user and not request.user.is_admin_role:
         return JsonResponse({"error": "Request not found"}, status=404)
 
     # POST — create
@@ -83,7 +85,7 @@ def flow_detail(request, pk):
     except TrafficFlow.DoesNotExist:
         return JsonResponse({"error": "Flow not found"}, status=404)
 
-    if flow.vpn_request.requester != request.user:
+    if flow.vpn_request.requester != request.user and not request.user.is_admin_role:
         return JsonResponse({"error": "Permission denied"}, status=403)
 
     if request.method == "DELETE":

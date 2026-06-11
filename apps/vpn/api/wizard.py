@@ -6,10 +6,17 @@ from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
+from apps.vpn.api.requests import EDITABLE_STATUSES
 from apps.vpn.models import Application, VpnRequest, VpnRequestApplication
 from apps.vpn.services.workflow import resubmit_request, submit_request
 
-EDITABLE_STATUSES = ("draft", "infosec_changes_requested", "network_changes_requested")
+
+def _owned_requests(user):
+    """Requests this user may edit: their own, or any (admins act on behalf of requesters)."""
+    qs = VpnRequest.objects.all()
+    if not user.is_admin_role:
+        qs = qs.filter(requester=user)
+    return qs
 
 
 def serialize_request(req):
@@ -67,7 +74,7 @@ def serialize_request(req):
 def wizard_load(request, pk):
     """Load full draft data for the wizard."""
     try:
-        vpn_req = VpnRequest.objects.select_related("vendor").get(pk=pk, requester=request.user)
+        vpn_req = _owned_requests(request.user).select_related("vendor").get(pk=pk)
     except VpnRequest.DoesNotExist:
         return JsonResponse({"error": "Request not found"}, status=404)
 
@@ -145,7 +152,7 @@ def wizard_save_step(request, pk, step):
         return JsonResponse({"error": f"Invalid step: {step}"}, status=400)
 
     try:
-        vpn_req = VpnRequest.objects.get(pk=pk, requester=request.user, status__in=EDITABLE_STATUSES)
+        vpn_req = _owned_requests(request.user).get(pk=pk, status__in=EDITABLE_STATUSES)
     except VpnRequest.DoesNotExist:
         return JsonResponse({"error": "Editable request not found"}, status=404)
 
@@ -223,8 +230,8 @@ def wizard_save_step(request, pk, step):
 def wizard_submit(request, pk):
     """Validate all fields and submit the request (FSM transition)."""
     try:
-        vpn_req = VpnRequest.objects.select_related("vendor").get(
-            pk=pk, requester=request.user, status__in=EDITABLE_STATUSES
+        vpn_req = _owned_requests(request.user).select_related("vendor").get(
+            pk=pk, status__in=EDITABLE_STATUSES
         )
     except VpnRequest.DoesNotExist:
         return JsonResponse({"error": "Editable request not found"}, status=404)

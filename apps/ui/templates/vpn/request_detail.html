@@ -876,6 +876,33 @@
               </tbody>
             </table>
           </div>
+          {% elif nat_allocation_missing %}
+          <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-center">
+            <p class="text-sm font-medium text-amber-900">NAT IPs have not been assigned.</p>
+            <p class="mt-1 text-xs text-amber-800">
+              This request needs NAT mappings but allocation did not complete — usually because the
+              endpoint site(s) have no matching NAT pools.
+              Configure inbound/outbound pools under <a href="{% url 'ui:pool-list' %}" class="font-semibold underline">Address Pools</a>, then retry.
+            </p>
+            {% if can_allocate_nat %}
+            <button type="button" id="btn-allocate-nat" onclick="allocateNat()"
+                    class="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 transition-colors">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+              </svg>
+              Allocate NAT Now
+            </button>
+            <div id="allocate-nat-feedback" class="hidden mt-3 rounded-lg px-4 py-2.5 text-sm font-medium"></div>
+            {% endif %}
+          </div>
+          {% elif nat_stage_reached %}
+          <div class="text-center py-8">
+            <svg class="mx-auto h-10 w-10 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p class="mt-2 text-sm text-slate-600 font-medium">No NAT required.</p>
+            <p class="mt-1 text-xs text-slate-400">All flow destinations are globally unique (public) and reachable without translation.</p>
+          </div>
           {% else %}
           <div class="text-center py-8">
             <svg class="mx-auto h-10 w-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -984,6 +1011,41 @@ function copyConfig(btn, textareaId) {
   });
 }
 
+function allocateNat() {
+  var requestId = {{ approval_actions_json|safe }}.requestId;
+  var csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  var btn = document.getElementById('btn-allocate-nat');
+  var feedback = document.getElementById('allocate-nat-feedback');
+  btn.disabled = true;
+  btn.classList.add('opacity-50');
+
+  fetch('/api/vpn/requests/' + requestId + '/allocate-nat/', {
+    method: 'POST',
+    headers: { 'X-CSRFToken': csrfToken },
+  })
+  .then(function(response) { return response.json().then(function(data) { return { ok: response.ok, data: data }; }); })
+  .then(function(result) {
+    feedback.classList.remove('hidden');
+    if (result.ok) {
+      feedback.className = 'mt-3 rounded-lg px-4 py-2.5 text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-200';
+      feedback.textContent = 'Allocated ' + result.data.mappings + ' NAT mapping(s). Reloading...';
+      setTimeout(function() { window.location.reload(); }, 1200);
+    } else {
+      feedback.className = 'mt-3 rounded-lg px-4 py-2.5 text-sm font-medium bg-red-50 text-red-800 border border-red-200';
+      feedback.textContent = result.data.error || 'Allocation failed.';
+      btn.disabled = false;
+      btn.classList.remove('opacity-50');
+    }
+  })
+  .catch(function() {
+    feedback.classList.remove('hidden');
+    feedback.className = 'mt-3 rounded-lg px-4 py-2.5 text-sm font-medium bg-red-50 text-red-800 border border-red-200';
+    feedback.textContent = 'Network error. Please try again.';
+    btn.disabled = false;
+    btn.classList.remove('opacity-50');
+  });
+}
+
 function switchTab(tabName) {
   document.querySelectorAll('[id^="tab-"]').forEach(function(el) {
     el.classList.add('hidden');
@@ -1021,9 +1083,16 @@ function submitApprovalAction(action) {
   .then(function(result) {
     feedback.classList.remove('hidden');
     if (result.ok) {
-      feedback.className = 'rounded-lg px-4 py-3 text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-200';
-      feedback.textContent = 'Action completed successfully. Reloading...';
-      setTimeout(function() { window.location.reload(); }, 1000);
+      if (result.data.nat_warning) {
+        feedback.className = 'rounded-lg px-4 py-3 text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200';
+        feedback.textContent = 'Approved, but NAT allocation failed: ' + result.data.nat_warning +
+          ' Configure NAT pools, then use "Allocate NAT Now" on the Allocations tab. Reloading...';
+        setTimeout(function() { window.location.reload(); }, 4000);
+      } else {
+        feedback.className = 'rounded-lg px-4 py-3 text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-200';
+        feedback.textContent = 'Action completed successfully. Reloading...';
+        setTimeout(function() { window.location.reload(); }, 1000);
+      }
     } else {
       feedback.className = 'rounded-lg px-4 py-3 text-sm font-medium bg-red-50 text-red-800 border border-red-200';
       feedback.textContent = result.data.error || 'An error occurred.';

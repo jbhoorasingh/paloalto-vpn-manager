@@ -109,6 +109,7 @@ def approve_network_view(request, pk):
         "ok": True,
         "status": vpn_req.status,
         "reference_number": vpn_req.reference_number,
+        "nat_warning": getattr(vpn_req, "nat_allocation_error", None),
     })
 
 
@@ -174,6 +175,45 @@ def reject_view(request, pk):
         "status": vpn_req.status,
         "reference_number": vpn_req.reference_number,
     })
+
+
+# Statuses in which NAT (re-)allocation is allowed — network approval onwards.
+NAT_ALLOCATABLE_STATUSES = (
+    "network_approved", "scheduled", "deploy_ready", "deployed", "active",
+)
+
+
+@login_required
+@require_http_methods(["POST"])
+def allocate_nat_view(request, pk):
+    """
+    (Re-)run NAT allocation for an approved request — used when the automatic
+    allocation at network approval failed (e.g. missing pools) and the pools
+    have since been fixed.
+    """
+    if not request.user.is_network_approver:
+        return JsonResponse({"error": "Permission denied"}, status=403)
+
+    try:
+        vpn_req = VpnRequest.objects.get(pk=pk)
+    except VpnRequest.DoesNotExist:
+        return JsonResponse({"error": "Request not found"}, status=404)
+
+    if vpn_req.status not in NAT_ALLOCATABLE_STATUSES:
+        return JsonResponse(
+            {"error": "NAT can only be allocated once the request is network approved."},
+            status=400,
+        )
+
+    from apps.vpn.services.nat import allocate_nat_mappings
+
+    try:
+        allocate_nat_mappings(vpn_req)
+    except ValidationError as e:
+        msg = "; ".join(e.messages) if hasattr(e, "messages") else str(e)
+        return JsonResponse({"error": msg}, status=400)
+
+    return JsonResponse({"ok": True, "mappings": vpn_req.nat_mappings.count()})
 
 
 @login_required

@@ -339,6 +339,81 @@ class TestApprovalAPI:
         assert response.status_code == 200
         assert response.json()["status"] == "network_changes_requested"
 
+    def test_approve_network_surfaces_nat_failure(self, network_client):
+        from apps.core.tests.factories import SiteFactory
+
+        site = SiteFactory()  # no NAT pools configured
+        req = make_submitted_request(
+            directionality="we_initiate",
+            our_endpoint_1_site=site,
+        )
+        # Factory flow destination is private → NAT required but unallocatable
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        response = network_client.post(
+            reverse("vpn-api:approve-network", args=[req.pk]),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "network_approved"  # approval not blocked
+        assert "NAT pools" in data["nat_warning"]
+
+    def test_approve_network_no_warning_on_success(self, network_client):
+        from apps.core.tests.factories import NatPoolFactory, SiteFactory
+
+        site = SiteFactory()
+        NatPoolFactory(site=site, direction="outbound", cidr="10.111.96.0/24")
+        req = make_submitted_request(
+            directionality="we_initiate",
+            our_endpoint_1_site=site,
+        )
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        response = network_client.post(
+            reverse("vpn-api:approve-network", args=[req.pk]),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert response.json()["nat_warning"] is None
+        req = type(req).objects.get(pk=req.pk)
+        assert req.nat_mappings.count() == 1
+
+    def test_allocate_nat_retry_after_pools_added(self, network_client):
+        from apps.core.tests.factories import NatPoolFactory, SiteFactory
+
+        site = SiteFactory()
+        req = make_submitted_request(
+            directionality="we_initiate",
+            our_endpoint_1_site=site,
+        )
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        req = type(req).objects.get(pk=req.pk)
+        network_client.post(
+            reverse("vpn-api:approve-network", args=[req.pk]),
+            content_type="application/json",
+        )
+        assert req.nat_mappings.count() == 0
+
+        # Retry fails with a clear reason while pools are still missing
+        retry = network_client.post(reverse("vpn-api:allocate-nat", args=[req.pk]))
+        assert retry.status_code == 400
+        assert "NAT pools" in retry.json()["error"]
+
+        # Operator adds the pool, retry succeeds
+        NatPoolFactory(site=site, direction="outbound", cidr="10.111.96.0/24")
+        retry = network_client.post(reverse("vpn-api:allocate-nat", args=[req.pk]))
+        assert retry.status_code == 200
+        assert retry.json()["mappings"] == 1
+
+    def test_allocate_nat_forbidden_for_requester(self, requester_client):
+        req = make_submitted_request()
+        response = requester_client.post(reverse("vpn-api:allocate-nat", args=[req.pk]))
+        assert response.status_code == 403
+
+    def test_allocate_nat_requires_network_approved_status(self, network_client):
+        req = make_submitted_request()  # still 'submitted'
+        response = network_client.post(reverse("vpn-api:allocate-nat", args=[req.pk]))
+        assert response.status_code == 400
+
     def test_queue_shows_infosec_approved_to_network_approver(self, network_client):
         req = make_submitted_request()
         approve_infosec(req, UserFactory(roles=["infosec"]))

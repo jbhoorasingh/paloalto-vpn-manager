@@ -60,11 +60,22 @@ def approve_network(vpn_request, reviewer, comments=""):
 
     # Network approval is the point of no return for addressing — assign the
     # NAT IPs (inbound/outbound mappings) from the endpoint NAT pools now.
+    # A failure must not block the approval, but it must not be silent either:
+    # the reason is attached for the API/UI to surface, and allocation can be
+    # retried via the allocate-nat endpoint once pools are fixed.
     from apps.vpn.services.nat import allocate_nat_mappings
 
     try:
         allocate_nat_mappings(vpn_request)
-    except (ValidationError, Exception):
+    except ValidationError as e:
+        vpn_request.nat_allocation_error = (
+            "; ".join(e.messages) if hasattr(e, "messages") else str(e)
+        )
+        logger.exception(
+            "NAT allocation failed for %s", vpn_request.reference_number
+        )
+    except Exception:
+        vpn_request.nat_allocation_error = "Unexpected error during NAT allocation."
         logger.exception(
             "NAT allocation failed for %s", vpn_request.reference_number
         )

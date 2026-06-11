@@ -303,6 +303,40 @@ class TestAllocateNatMappings:
         assert req.status == "network_approved"
         assert req.nat_mappings.count() >= 1
 
+    def test_detail_page_flags_missing_nat_allocation(self, client_authenticated):
+        from django.urls import reverse
+
+        site = SiteFactory()  # no pools → allocation fails silently at approval
+        req = _make_submittable_request(
+            directionality="we_initiate", our_endpoint_1_site=site,
+        )
+        submit_request(req)
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        req = type(req).objects.get(pk=req.pk)
+        approve_network(req, UserFactory(roles=["network"]))
+
+        response = client_authenticated.get(reverse("ui:request-detail", args=[req.pk]))
+        assert response.context["nat_allocation_missing"] is True
+        assert "NAT IPs have not been assigned" in response.content.decode()
+
+    def test_detail_page_shows_no_nat_required_for_public_destinations(self, client_authenticated):
+        from django.urls import reverse
+
+        site = SiteFactory()
+        req = _make_submittable_request(
+            directionality="we_initiate", our_endpoint_1_site=site,
+        )
+        req.flows.all().delete()
+        TrafficFlowFactory(vpn_request=req, destination_cidr="198.51.100.0/24")
+        submit_request(req)
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        req = type(req).objects.get(pk=req.pk)
+        approve_network(req, UserFactory(roles=["network"]))
+
+        response = client_authenticated.get(reverse("ui:request-detail", args=[req.pk]))
+        assert response.context["nat_allocation_missing"] is False
+        assert "No NAT required" in response.content.decode()
+
     def test_missing_pool_does_not_break_workflow(self):
         """No NAT pool configured: network approval still succeeds, no mappings created."""
         site = SiteFactory()  # no NAT pools

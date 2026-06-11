@@ -350,6 +350,18 @@ def request_detail_view(request, pk):
     allocation_count = tunnel_interfaces.count() + nat_mappings.count()
     has_allocations = allocation_count > 0
 
+    # Why are there no NAT mappings? Distinguish "not yet", "none required"
+    # (all destinations globally unique) and "allocation failed — retry".
+    from apps.vpn.api.approvals import NAT_ALLOCATABLE_STATUSES
+    from apps.vpn.services.nat import compute_nat_specs
+
+    nat_stage_reached = vpn_request.status in NAT_ALLOCATABLE_STATUSES
+    nat_required = False
+    if not nat_mappings.exists():
+        nat_required = bool(compute_nat_specs(vpn_request))
+    nat_allocation_missing = nat_stage_reached and nat_required
+    can_allocate_nat = nat_allocation_missing and request.user.is_network_approver
+
     # PAN-OS set commands per endpoint site
     panos_configs = [
         {**cfg, "text": config_as_text(cfg)}
@@ -374,6 +386,10 @@ def request_detail_view(request, pk):
         "nat_mappings": nat_mappings,
         "allocation_count": allocation_count,
         "has_allocations": has_allocations,
+        "nat_stage_reached": nat_stage_reached,
+        "nat_required": nat_required,
+        "nat_allocation_missing": nat_allocation_missing,
+        "can_allocate_nat": can_allocate_nat,
         "panos_configs": panos_configs,
     })
 

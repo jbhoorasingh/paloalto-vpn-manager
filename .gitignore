@@ -62,3 +62,5 @@ docker-compose.override.yml
 __pycache__/
 .pytest_cache/
 .env
+# Production env (never commit)
+.env.prod

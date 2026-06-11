@@ -77,3 +77,38 @@ The app is available at **http://localhost:8000**. Vite serves frontend assets o
 ```bash
 poetry run pytest
 ```
+
+## Production Deployment (Docker)
+
+The full stack runs as containers: gunicorn web app (Vue assets and static
+files baked into the image, served by WhiteNoise), Celery worker, Postgres
+and Redis.
+
+```bash
+# 1. Configure secrets (allowed hosts, secret key, DB password, ...)
+cp .env.prod.example .env.prod
+
+# 2. Build and start everything
+docker compose -f docker-compose.prod.yml up -d --build   # or: make prod-up
+
+# 3. Watch it come up
+docker compose -f docker-compose.prod.yml ps
+make prod-logs
+```
+
+The web container runs migrations on boot (and creates an admin account if
+the `DJANGO_SUPERUSER_*` variables are set); the worker waits for a healthy
+web container before starting. The app listens on port **8000** — put a
+TLS-terminating proxy in front and set `DJANGO_CSRF_TRUSTED_ORIGINS` to its
+public origin, or set `DJANGO_SECURE_SSL_REDIRECT=False` for plain-HTTP lab
+deployments.
+
+| Command           | Description                                  |
+|-------------------|----------------------------------------------|
+| `make prod-up`    | Build images and start the production stack  |
+| `make prod-down`  | Stop the production stack                    |
+| `make prod-build` | Rebuild images only                          |
+| `make prod-logs`  | Tail logs from all services                  |
+
+> `docker-compose.yml` (no suffix) remains the local-dev helper that only
+> runs Postgres and Redis for `make run`.

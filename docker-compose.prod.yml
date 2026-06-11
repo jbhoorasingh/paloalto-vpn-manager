@@ -1,0 +1,64 @@
+# Production stack: gunicorn web app, Celery worker, Postgres, Redis.
+# Usage:
+#   cp .env.prod.example .env.prod   # fill in secrets
+#   docker compose -f docker-compose.prod.yml up -d --build
+name: vpn-platform
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env.prod
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-vpn_platform} -d $${POSTGRES_DB:-vpn_platform}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build: .
+    image: vpn-platform:latest
+    restart: unless-stopped
+    env_file: .env.prod
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import http.client; c = http.client.HTTPConnection('127.0.0.1', 8000, timeout=5); c.request('GET', '/accounts/login/'); s = c.getresponse().status; exit(0 if s < 500 else 1)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    image: vpn-platform:latest
+    restart: unless-stopped
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--concurrency=2"]
+    env_file: .env.prod
+    environment:
+      RUN_MIGRATIONS: "0"
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

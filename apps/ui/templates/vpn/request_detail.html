@@ -19,22 +19,7 @@
       <div class="space-y-2">
         <div class="flex items-center gap-3 flex-wrap">
           <h1 class="text-xl font-bold text-slate-900">{{ vpn_request.reference_number }}</h1>
-          {# Status badge #}
-          {% with status=vpn_request.status %}
-          <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold
-            {% if status == 'draft' %}bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-300
-            {% elif status == 'submitted' %}bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20
-            {% elif status == 'infosec_approved' or status == 'network_approved' %}bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20
-            {% elif status == 'infosec_changes_requested' or status == 'network_changes_requested' %}bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20
-            {% elif status == 'rejected' or status == 'decommissioned' %}bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20
-            {% elif status == 'active' %}bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20
-            {% elif status == 'deployed' or status == 'deploy_ready' or status == 'scheduled' %}bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20
-            {% elif status == 'recert_due' or status == 'recert_in_review' %}bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/20
-            {% else %}bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-300
-            {% endif %}">
-            {{ vpn_request.get_status_display }}
-          </span>
-          {% endwith %}
+          {% include "components/status_badge.html" with status=vpn_request.status label=vpn_request.get_status_display %}
         </div>
         <h2 class="text-lg text-slate-700">{{ vpn_request.title|default:"Untitled Request" }}</h2>
         <div class="flex items-center gap-4 text-sm text-slate-500 flex-wrap">

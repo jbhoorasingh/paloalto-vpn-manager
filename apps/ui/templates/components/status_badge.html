@@ -1,0 +1,22 @@
+{% comment %}
+Canonical VPN request status badge. Usage:
+  {% include "components/status_badge.html" with status=req.status label=req.get_status_display %}
+Tones mirror frontend/src/components/shared/StatusBadge.vue — keep them in sync.
+  slate   draft, decommissioned (terminal/inactive)
+  blue    submitted (in review)
+  emerald infosec_approved, network_approved, recert_approved, active
+  amber   infosec_changes_requested, network_changes_requested
+  red     rejected, decommission_requested, decommission_approved
+  indigo  scheduled, deploy_ready, deployed (deployment pipeline)
+  orange  recert_due, recert_in_review
+{% endcomment %}
+<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap
+  {% if status == 'submitted' %}bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20
+  {% elif status == 'infosec_approved' or status == 'network_approved' or status == 'recert_approved' or status == 'active' %}bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20
+  {% elif status == 'infosec_changes_requested' or status == 'network_changes_requested' %}bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20
+  {% elif status == 'rejected' or status == 'decommission_requested' or status == 'decommission_approved' %}bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20
+  {% elif status == 'scheduled' or status == 'deploy_ready' or status == 'deployed' %}bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20
+  {% elif status == 'recert_due' or status == 'recert_in_review' %}bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/20
+  {% else %}bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-300{% endif %}">
+  {{ label }}
+</span>

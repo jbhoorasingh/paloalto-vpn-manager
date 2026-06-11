@@ -61,9 +61,7 @@
               <span class="block text-xs text-slate-500 mt-0.5 max-w-xs truncate">{{ req.title|default:"Untitled" }}</span>
             </td>
             <td class="whitespace-nowrap px-6 py-4 text-sm">
-              <span class="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/20">
-                {{ req.get_status_display }}
-              </span>
+              {% include "components/status_badge.html" with status=req.status label=req.get_status_display %}
             </td>
             <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-900">{{ req.vendor.name|default:"--" }}</td>
             <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">

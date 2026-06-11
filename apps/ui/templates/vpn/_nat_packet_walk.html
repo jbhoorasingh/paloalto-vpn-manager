@@ -1,0 +1,146 @@
+{% comment %}
+One packet-walk card per NAT translation. Context: `walk` (see
+_build_nat_packet_walks in apps/ui/views/request_detail.py).
+Layout: sender → packet (pre-NAT) → firewall (rewrites) → packet (post-NAT) → receiver.
+{% endcomment %}
+<div class="rounded-xl border border-slate-200 overflow-hidden">
+  {# Walk header #}
+  <div class="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
+    <div class="flex items-center gap-2">
+      {% if walk.is_outbound %}
+      <span class="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">Outbound &rarr;</span>
+      <span class="text-xs text-slate-500">we initiate &middot; our network &rarr; vendor</span>
+      {% else %}
+      <span class="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">&larr; Inbound</span>
+      <span class="text-xs text-slate-500">vendor initiates &middot; vendor &rarr; our network</span>
+      {% endif %}
+      {% if walk.dr_shared %}
+      <span class="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700">DR pair — same NAT at both firewalls</span>
+      {% endif %}
+    </div>
+    <span class="text-xs font-mono text-slate-500">{{ walk.protocol }}{% if walk.ports %}/{{ walk.ports }}{% endif %}</span>
+  </div>
+
+  <div class="p-4 overflow-x-auto">
+    <div class="flex items-stretch gap-0 min-w-[760px]">
+
+      {# ── Sender ── #}
+      <div class="flex flex-col justify-center w-44 shrink-0">
+        <div class="rounded-lg border-2 {% if walk.is_outbound %}border-indigo-300 bg-indigo-50{% else %}border-amber-300 bg-amber-50{% endif %} px-3 py-3 text-center">
+          <svg class="mx-auto h-6 w-6 {% if walk.is_outbound %}text-indigo-500{% else %}text-amber-600{% endif %}" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            {% if walk.is_outbound %}
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25" />
+            {% else %}
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+            {% endif %}
+          </svg>
+          <p class="mt-1 text-xs font-semibold text-slate-900">
+            {% if walk.is_outbound %}Internal Clients{% else %}Vendor Hosts{% endif %}
+          </p>
+          <p class="text-xs font-mono text-slate-600">{{ walk.source }}</p>
+          <p class="mt-1.5 text-[11px] leading-tight text-slate-500">
+            target
+            <span class="block font-mono font-semibold {% if walk.is_outbound %}text-indigo-700{% else %}text-amber-700{% endif %}">{{ walk.nat_address }}</span>
+          </p>
+        </div>
+      </div>
+
+      {# ── Packet before NAT ── #}
+      <div class="flex flex-col justify-center px-2 shrink-0">
+        <div class="flex items-center">
+          <div class="rounded-lg border border-slate-300 bg-white shadow-sm text-[11px] font-mono">
+            <div class="px-2.5 py-1 border-b border-slate-200 bg-slate-50 text-slate-500 font-sans font-semibold rounded-t-lg">packet on the wire</div>
+            <div class="px-2.5 py-1 flex gap-1.5"><span class="text-slate-400 w-7">SRC</span><span class="text-slate-900">{{ walk.source }}</span></div>
+            <div class="px-2.5 py-1 flex gap-1.5 rounded-b-lg {% if walk.is_outbound %}bg-indigo-50{% else %}bg-amber-50{% endif %}">
+              <span class="text-slate-400 w-7">DST</span>
+              <span class="font-semibold {% if walk.is_outbound %}text-indigo-700{% else %}text-amber-700{% endif %}">{{ walk.nat_address }}{% if walk.ports %}:{{ walk.ports }}{% endif %}</span>
+            </div>
+          </div>
+          <svg class="h-5 w-8 text-slate-400 shrink-0" fill="none" viewBox="0 0 32 20" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2 10h24m0 0l-6-6m6 6l-6 6" />
+          </svg>
+        </div>
+      </div>
+
+      {# ── Firewall(s): the rewrite ── #}
+      <div class="flex flex-col justify-center w-64 shrink-0 gap-2">
+        {% for fw in walk.firewalls %}
+        <div class="rounded-lg border-2 border-red-300 bg-red-50/60 px-3 py-2.5">
+          <div class="flex items-center gap-1.5">
+            <svg class="h-4 w-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.047 8.287 8.287 0 009 9.601a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z" />
+            </svg>
+            <p class="text-xs font-semibold text-slate-900 truncate">{{ fw.site.name }} <span class="text-slate-500 font-normal">({{ fw.site.code }})</span></p>
+          </div>
+          <div class="mt-1.5 space-y-1 text-[11px] font-mono">
+            <div class="flex items-start gap-1">
+              <span class="rounded bg-red-100 px-1 text-red-700 font-sans font-semibold shrink-0">DST</span>
+              <span class="text-slate-700">{{ walk.nat_address }} <span class="text-red-500">&rarr;</span> {{ walk.real_address }}</span>
+            </div>
+            {% if walk.is_outbound %}
+              {% for snat in fw.snats %}
+              <div class="flex items-start gap-1">
+                <span class="rounded bg-red-100 px-1 text-red-700 font-sans font-semibold shrink-0">SRC</span>
+                <span class="text-slate-700">&rarr; {{ snat.ip }} <span class="text-slate-400 font-sans">({{ snat.label }})</span></span>
+              </div>
+              {% empty %}
+              <div class="flex items-start gap-1">
+                <span class="rounded bg-red-100 px-1 text-red-700 font-sans font-semibold shrink-0">SRC</span>
+                <span class="text-slate-700">&rarr; egress tunnel IP</span>
+              </div>
+              {% endfor %}
+            {% else %}
+            <div class="flex items-start gap-1">
+              <span class="rounded bg-red-100 px-1 text-red-700 font-sans font-semibold shrink-0">SRC</span>
+              <span class="text-slate-700">&rarr; inside interface IP</span>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+        <p class="text-center text-[11px] text-slate-400">one-to-one destination NAT &middot; symmetric source NAT</p>
+      </div>
+
+      {# ── Packet after NAT ── #}
+      <div class="flex flex-col justify-center px-2 shrink-0">
+        <div class="flex items-center">
+          <svg class="h-5 w-8 text-slate-400 shrink-0" fill="none" viewBox="0 0 32 20" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 3" d="M2 10h24m0 0l-6-6m6 6l-6 6" />
+          </svg>
+          <div class="rounded-lg border border-slate-300 bg-white shadow-sm text-[11px] font-mono">
+            <div class="px-2.5 py-1 border-b border-slate-200 bg-slate-50 text-slate-500 font-sans font-semibold rounded-t-lg">
+              {% if walk.is_outbound %}inside the tunnel{% else %}to the server{% endif %}
+            </div>
+            <div class="px-2.5 py-1 flex gap-1.5 bg-emerald-50"><span class="text-slate-400 w-7">SRC</span><span class="font-semibold text-emerald-700">{{ walk.seen_source }}</span></div>
+            <div class="px-2.5 py-1 flex gap-1.5 rounded-b-lg bg-emerald-50/60">
+              <span class="text-slate-400 w-7">DST</span>
+              <span class="font-semibold text-emerald-700">{{ walk.real_address }}{% if walk.ports %}:{{ walk.ports }}{% endif %}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ── Receiver ── #}
+      <div class="flex flex-col justify-center w-44 shrink-0">
+        <div class="rounded-lg border-2 {% if walk.is_outbound %}border-amber-300 bg-amber-50{% else %}border-indigo-300 bg-indigo-50{% endif %} px-3 py-3 text-center">
+          <svg class="mx-auto h-6 w-6 {% if walk.is_outbound %}text-amber-600{% else %}text-indigo-500{% endif %}" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            {% if walk.is_outbound %}
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+            {% else %}
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7" />
+            {% endif %}
+          </svg>
+          <p class="mt-1 text-xs font-semibold text-slate-900">
+            {% if walk.is_outbound %}Vendor Firewall{% else %}Internal Service{% endif %}
+          </p>
+          <p class="text-xs font-mono text-slate-600">{{ walk.real_address }}</p>
+          <p class="mt-1.5 text-[11px] leading-tight text-slate-500">
+            sees source
+            <span class="block font-mono font-semibold text-emerald-700">{{ walk.seen_source }}</span>
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>

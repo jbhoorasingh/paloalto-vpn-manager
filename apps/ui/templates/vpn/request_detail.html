@@ -920,6 +920,23 @@
           {% endif %}
         </div>
       </div>
+
+      {# NAT packet walk #}
+      {% if nat_packet_walks %}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-base font-semibold text-slate-900">NAT Packet Walk</h3>
+          <p class="mt-0.5 text-xs text-slate-500">
+            What the sender targets, how each firewall rewrites the packet, and what the far side sees.
+          </p>
+        </div>
+        <div class="p-6 space-y-4">
+          {% for walk in nat_packet_walks %}
+          {% include "vpn/_nat_packet_walk.html" %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
     </div>
 
     {# Config tab #}

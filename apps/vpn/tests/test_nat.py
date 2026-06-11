@@ -387,6 +387,87 @@ class TestDrPeerModel:
         assert DrPeer.for_sites(peer.primary_site, SiteFactory()) is None
 
 
+# ── NAT packet-walk visualization ────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestNatPacketWalk:
+    def _request_with_mapping(self, direction="outbound", sites=None):
+        from apps.vpn.models.tunnel import TunnelInterface
+
+        sites = sites or [SiteFactory()]
+        req = VpnRequestFactory(
+            directionality="we_initiate" if direction == "outbound" else "vendor_initiates",
+            our_endpoint_1_site=sites[0],
+            our_endpoint_2_site=sites[1] if len(sites) > 1 else None,
+        )
+        flow = TrafficFlowFactory(
+            vpn_request=req, direction=direction,
+            source_cidr="10.5.0.0/24", destination_cidr="172.16.9.9/32",
+            protocol="tcp", destination_ports="443",
+        )
+        for i, site in enumerate(sites):
+            TunnelInterface.objects.create(
+                vpn_request=req, site=site, tunnel_number=101,
+                local_ip=f"10.255.{i}.1", remote_ip=f"10.255.{i}.2",
+                subnet_cidr=f"10.255.{i}.0/30",
+            )
+            NatMapping.objects.create(
+                vpn_request=req, site=site, direction=direction,
+                nat_address="10.111.96.10/32", real_address="172.16.9.9/32",
+                traffic_flow=flow,
+            )
+        return req
+
+    def test_outbound_walk_shows_target_rewrites_and_far_side(self, client_authenticated):
+        from django.urls import reverse
+
+        req = self._request_with_mapping("outbound")
+        response = client_authenticated.get(reverse("ui:request-detail", args=[req.pk]))
+        walks = response.context["nat_packet_walks"]
+        assert len(walks) == 1
+        walk = walks[0]
+        assert walk["is_outbound"] is True
+        assert walk["source"] == "10.5.0.0/24"          # who sends
+        assert walk["nat_address"] == "10.111.96.10/32"  # what clients target
+        assert walk["real_address"] == "172.16.9.9/32"   # what it becomes
+        assert walk["seen_source"] == "10.255.0.1"       # SNAT to tunnel IP
+        body = response.content.decode()
+        assert "NAT Packet Walk" in body
+        assert "10.111.96.10/32" in body
+        assert "sees source" in body
+
+    def test_inbound_walk_snats_to_inside_interface(self, client_authenticated):
+        from django.urls import reverse
+
+        req = self._request_with_mapping("inbound")
+        response = client_authenticated.get(reverse("ui:request-detail", args=[req.pk]))
+        walk = response.context["nat_packet_walks"][0]
+        assert walk["is_outbound"] is False
+        assert walk["seen_source"] == "firewall inside IP"
+        assert "Vendor Hosts" in response.content.decode()
+
+    def test_dr_pair_renders_one_walk_with_both_firewalls(self, client_authenticated):
+        from django.urls import reverse
+
+        sites = [SiteFactory(), SiteFactory()]
+        req = self._request_with_mapping("outbound", sites=sites)
+        response = client_authenticated.get(reverse("ui:request-detail", args=[req.pk]))
+        walks = response.context["nat_packet_walks"]
+        assert len(walks) == 1  # same translation, not duplicated per site
+        assert walks[0]["dr_shared"] is True
+        assert len(walks[0]["firewalls"]) == 2
+        assert "DR pair" in response.content.decode()
+
+    def test_no_walks_without_mappings(self, client_authenticated):
+        from django.urls import reverse
+
+        req = VpnRequestFactory(our_endpoint_1_site=SiteFactory())
+        response = client_authenticated.get(reverse("ui:request-detail", args=[req.pk]))
+        assert response.context["nat_packet_walks"] == []
+        assert "NAT Packet Walk" not in response.content.decode()
+
+
 # ── allocate_nat_mappings (integration) ──────────────────────────────
 
 

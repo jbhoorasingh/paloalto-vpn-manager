@@ -293,6 +293,67 @@ def _build_request_snapshot(vpn_request):
     return snapshot
 
 
+def _build_nat_packet_walks(vpn_request, tunnel_interfaces, nat_mappings):
+    """
+    One packet-walk per unique NAT translation: what the sender targets (the
+    published NAT address), the header rewrites at our firewall (destination
+    NAT plus symmetric source NAT), and what the far side sees.
+
+    DR pairs produce one walk covering both firewalls (same NAT address).
+    """
+    tunnels_by_site = {}
+    for ti in tunnel_interfaces:
+        tunnels_by_site.setdefault(ti.site_id, []).append(ti)
+
+    groups = {}
+    for nm in nat_mappings:
+        key = (nm.direction, nm.nat_address, nm.real_address, nm.traffic_flow_id)
+        groups.setdefault(key, []).append(nm)
+
+    walks = []
+    for (direction, nat_address, real_address, _flow_id), group in groups.items():
+        flow = group[0].traffic_flow
+        source = flow.source_cidr if flow else "any"
+        protocol = flow.protocol.upper() if flow else "ANY"
+        ports = (flow.destination_ports or "any") if flow else "any"
+        if protocol in ("ICMP", "ANY"):
+            ports = ""
+
+        firewalls = []
+        for nm in group:
+            snats = []
+            if direction == "outbound":
+                for ti in tunnels_by_site.get(nm.site_id, []):
+                    if ti.local_ip:
+                        snats.append({"label": f"tunnel.{ti.tunnel_number}", "ip": ti.local_ip})
+            firewalls.append({"site": nm.site, "snats": snats})
+
+        # What the receiving side sees as the packet's source
+        if direction == "outbound":
+            first_snat = next(
+                (s for fw in firewalls for s in fw["snats"]), None
+            )
+            seen_source = first_snat["ip"] if first_snat else "tunnel interface IP"
+        else:
+            seen_source = "firewall inside IP"
+
+        walks.append({
+            "direction": direction,
+            "is_outbound": direction == "outbound",
+            "nat_address": nat_address,
+            "real_address": real_address,
+            "source": source,
+            "protocol": protocol,
+            "ports": ports,
+            "firewalls": firewalls,
+            "dr_shared": len(group) > 1,
+            "seen_source": seen_source,
+        })
+
+    walks.sort(key=lambda w: (w["direction"], w["nat_address"]))
+    return walks
+
+
 @login_required
 def request_list_view(request):
     scope = request.GET.get("scope", "mine")
@@ -362,6 +423,11 @@ def request_detail_view(request, pk):
     nat_allocation_missing = nat_stage_reached and nat_required
     can_allocate_nat = nat_allocation_missing and request.user.is_network_approver
 
+    # Packet-walk visualization of each NAT translation
+    nat_packet_walks = _build_nat_packet_walks(
+        vpn_request, tunnel_interfaces, nat_mappings
+    )
+
     # PAN-OS set commands per endpoint site
     panos_configs = [
         {**cfg, "text": config_as_text(cfg)}
@@ -390,6 +456,7 @@ def request_detail_view(request, pk):
         "nat_required": nat_required,
         "nat_allocation_missing": nat_allocation_missing,
         "can_allocate_nat": can_allocate_nat,
+        "nat_packet_walks": nat_packet_walks,
         "panos_configs": panos_configs,
     })
 

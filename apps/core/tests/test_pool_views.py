@@ -76,8 +76,11 @@ class TestNatPoolCrud:
         assert NatPool.objects.count() == 1
 
     def test_create_shared_pool(self, client_authenticated):
+        from apps.core.tests.factories import DrPeerFactory
+        peer = DrPeerFactory()
         response = client_authenticated.post(reverse("ui:nat-pool-create"), {
             "scope": "shared",
+            "dr_peer": peer.pk,
             "direction": "outbound",
             "cidr": "10.111.200.0/24",
             "is_active": "on",
@@ -86,13 +89,76 @@ class TestNatPoolCrud:
         pool = NatPool.objects.get(cidr="10.111.200.0/24")
         assert pool.scope == "shared"
         assert pool.site is None
+        assert pool.dr_peer == peer
+
+    def test_create_shared_pool_without_peer_rejected(self, client_authenticated):
+        response = client_authenticated.post(reverse("ui:nat-pool-create"), {
+            "scope": "shared",
+            "direction": "outbound",
+            "cidr": "10.111.200.0/24",
+            "is_active": "on",
+        })
+        assert response.status_code == 200
+        assert "dr_peer" in response.context["errors"]
+        assert NatPool.objects.count() == 0
 
     def test_shared_pools_visible_under_any_site_filter(self, client_authenticated):
+        from apps.core.tests.factories import DrPeerFactory
         site = SiteFactory()
         NatPoolFactory(site=site, direction="outbound", cidr="10.111.96.0/24")
-        NatPoolFactory(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        NatPoolFactory(
+            site=None, scope="shared", dr_peer=DrPeerFactory(),
+            direction="outbound", cidr="10.111.200.0/24",
+        )
         response = client_authenticated.get(reverse("ui:pool-list"), {"site": site.pk})
         assert len(response.context["nat_rows"]) == 2
+
+
+@pytest.mark.django_db
+class TestDrPeerViews:
+    def test_create(self, client_authenticated):
+        from apps.core.models import DrPeer
+        site1, site2 = SiteFactory(), SiteFactory()
+        response = client_authenticated.post(reverse("ui:dr-peer-create"), {
+            "name": "East pair",
+            "primary_site": site1.pk,
+            "secondary_site": site2.pk,
+            "is_active": "on",
+        })
+        assert response.status_code == 302
+        peer = DrPeer.objects.get(name="East pair")
+        assert peer.primary_site == site1
+        assert peer.secondary_site == site2
+
+    def test_create_same_site_rejected(self, client_authenticated):
+        from apps.core.models import DrPeer
+        site = SiteFactory()
+        response = client_authenticated.post(reverse("ui:dr-peer-create"), {
+            "name": "bad",
+            "primary_site": site.pk,
+            "secondary_site": site.pk,
+            "is_active": "on",
+        })
+        assert response.status_code == 200
+        assert DrPeer.objects.count() == 0
+
+    def test_delete_removes_its_shared_pools(self, client_authenticated):
+        from apps.core.tests.factories import DrPeerFactory
+        peer = DrPeerFactory()
+        NatPoolFactory(
+            site=None, scope="shared", dr_peer=peer,
+            direction="outbound", cidr="10.111.200.0/24",
+        )
+        response = client_authenticated.post(reverse("ui:dr-peer-delete", args=[peer.pk]))
+        assert response.status_code == 302
+        assert NatPool.objects.count() == 0
+
+    def test_listed_on_pools_page(self, client_authenticated):
+        from apps.core.tests.factories import DrPeerFactory
+        peer = DrPeerFactory()
+        response = client_authenticated.get(reverse("ui:pool-list"))
+        assert response.status_code == 200
+        assert peer.name in response.content.decode()
 
     def test_edit(self, client_authenticated):
         pool = NatPoolFactory(cidr="10.111.96.0/24", description="old")

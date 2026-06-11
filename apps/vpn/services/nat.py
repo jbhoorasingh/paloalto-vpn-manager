@@ -4,7 +4,7 @@ import netaddr
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from apps.core.models import NatDirection, NatPool, NatPoolScope
+from apps.core.models import DrPeer, NatDirection, NatPool, NatPoolScope
 from apps.vpn.models.flow import is_rfc1918
 from apps.vpn.models.nat import NatMapping
 
@@ -47,13 +47,13 @@ def _endpoint_sites(vpn_request):
     return sites
 
 
-def _next_available_nat_address(site, direction, prefixlen):
+def _next_available_nat_address(site, direction, prefixlen, dr_peer=None):
     """
     Carve the next free block of size ``prefixlen`` from the active NAT pools
     for the given direction.
 
-    ``site`` selects the pool scope: a Site means that site's specific pools
-    (single-site requests); ``None`` means the shared (DR) pools — the same
+    A ``site`` means that site's specific pools (single-site requests);
+    ``site=None`` with a ``dr_peer`` means the peer's shared pools — the same
     address is provisioned at both DR endpoints, so used addresses are checked
     across ALL sites.
 
@@ -61,12 +61,14 @@ def _next_available_nat_address(site, direction, prefixlen):
     """
     if site is None:
         pools = NatPool.objects.filter(
-            scope=NatPoolScope.SHARED, direction=direction, is_active=True
+            scope=NatPoolScope.SHARED, dr_peer=dr_peer, direction=direction,
+            is_active=True,
         ).order_by("pk")
         if not pools.exists():
+            peer_name = dr_peer.name if dr_peer else "the DR peer"
             raise ValidationError(
-                f"No active shared (DR) {direction} NAT pools configured — "
-                "two-site requests need shared NAT pools."
+                f"No active shared {direction} NAT pools configured for "
+                f"DR peer '{peer_name}'."
             )
         used_qs = NatMapping.objects.filter(direction=direction)
     else:
@@ -172,12 +174,25 @@ def allocate_nat_mappings(vpn_request):
     specs = compute_nat_specs(vpn_request)
     created = 0
 
+    # Two-site requests must match a configured DR peer — that peer's shared
+    # pools own the NAT addressing for the pair.
+    dr_peer = None
+    if specs and specs[0]["shared"]:
+        site_a, site_b = specs[0]["sites"][0], specs[0]["sites"][1]
+        dr_peer = DrPeer.for_sites(site_a, site_b)
+        if dr_peer is None:
+            raise ValidationError(
+                f"Sites {site_a.code} and {site_b.code} are not configured as a "
+                "DR peer — create the DR peer (and its shared NAT pools) under "
+                "Address Pools first."
+            )
+
     for spec in specs:
-        # DR pairs carve once from the shared pools and provision the same
-        # address at every endpoint; single-site requests use site pools.
+        # DR pairs carve once from the peer's shared pools and provision the
+        # same address at every endpoint; single-site requests use site pools.
         pool_site = None if spec["shared"] else spec["sites"][0]
         nat_address, pool = _next_available_nat_address(
-            pool_site, spec["direction"], spec["prefixlen"]
+            pool_site, spec["direction"], spec["prefixlen"], dr_peer=dr_peer
         )
 
         for site in spec["sites"]:

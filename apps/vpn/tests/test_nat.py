@@ -66,13 +66,36 @@ class TestNatPoolModel:
             pool.full_clean()
 
     def test_shared_pool_valid(self):
-        pool = NatPool(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        from apps.core.tests.factories import DrPeerFactory
+        pool = NatPool(
+            site=None, scope="shared", dr_peer=DrPeerFactory(),
+            direction="outbound", cidr="10.111.200.0/24",
+        )
         pool.full_clean()  # should not raise
 
+    def test_shared_pool_requires_dr_peer(self):
+        pool = NatPool(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        with pytest.raises(ValidationError, match="DR peer"):
+            pool.full_clean()
+
+    def test_site_pool_must_not_have_dr_peer(self):
+        from apps.core.tests.factories import DrPeerFactory
+        site = SiteFactory()
+        pool = NatPool(
+            site=site, scope="site", dr_peer=DrPeerFactory(),
+            direction="outbound", cidr="10.111.96.0/24",
+        )
+        with pytest.raises(ValidationError, match="must not have a DR peer"):
+            pool.full_clean()
+
     def test_shared_pool_cannot_overlap_any_site_pool(self):
+        from apps.core.tests.factories import DrPeerFactory
         site = SiteFactory()
         NatPoolFactory(site=site, direction="outbound", cidr="10.111.96.0/24")
-        pool = NatPool(site=None, scope="shared", direction="inbound", cidr="10.111.96.0/25")
+        pool = NatPool(
+            site=None, scope="shared", dr_peer=DrPeerFactory(),
+            direction="inbound", cidr="10.111.96.0/25",
+        )
         with pytest.raises(ValidationError, match="Overlaps"):
             pool.full_clean()
 
@@ -261,9 +284,17 @@ class TestDrSharedAllocation:
         TrafficFlowFactory(vpn_request=req, destination_cidr="172.16.5.10/32")
         return req
 
+    def _peer_with_pool(self, site1, site2, cidr="10.111.200.0/24", direction="outbound"):
+        from apps.core.tests.factories import DrPeerFactory
+        peer = DrPeerFactory(primary_site=site1, secondary_site=site2)
+        NatPoolFactory(
+            site=None, scope="shared", dr_peer=peer, direction=direction, cidr=cidr
+        )
+        return peer
+
     def test_dr_pair_gets_same_address_at_both_sites(self):
         site1, site2 = SiteFactory(), SiteFactory()
-        NatPoolFactory(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        self._peer_with_pool(site1, site2)
         req = self._dr_request(site1, site2)
         allocate_nat_mappings(req)
         assert req.nat_mappings.count() == 2
@@ -271,18 +302,44 @@ class TestDrSharedAllocation:
         assert addresses == {"10.111.200.0/32"}  # same NAT IP at both endpoints
         assert set(req.nat_mappings.values_list("site_id", flat=True)) == {site1.pk, site2.pk}
 
-    def test_dr_pair_requires_shared_pools(self):
+    def test_endpoint_order_does_not_matter(self):
+        # Request picked the peer's secondary as endpoint 1 — still matches
         site1, site2 = SiteFactory(), SiteFactory()
-        # Site-specific pools exist but shared ones don't — DR must not use them
+        self._peer_with_pool(site1, site2)
+        req = self._dr_request(site2, site1)
+        allocate_nat_mappings(req)
+        assert req.nat_mappings.count() == 2
+
+    def test_two_sites_without_dr_peer_rejected(self):
+        site1, site2 = SiteFactory(), SiteFactory()
+        # Site-specific pools exist but the pair is not configured as a DR peer
         NatPoolFactory(site=site1, direction="outbound", cidr="10.111.96.0/24")
         NatPoolFactory(site=site2, direction="outbound", cidr="10.111.97.0/24")
         req = self._dr_request(site1, site2)
-        with pytest.raises(ValidationError, match="shared"):
+        with pytest.raises(ValidationError, match="not configured as a DR peer"):
+            allocate_nat_mappings(req)
+
+    def test_dr_peer_without_pools_rejected(self):
+        from apps.core.tests.factories import DrPeerFactory
+        site1, site2 = SiteFactory(), SiteFactory()
+        DrPeerFactory(primary_site=site1, secondary_site=site2)  # no pools
+        req = self._dr_request(site1, site2)
+        with pytest.raises(ValidationError, match="No active shared outbound NAT pools"):
+            allocate_nat_mappings(req)
+
+    def test_pools_of_other_peer_not_used(self):
+        site1, site2 = SiteFactory(), SiteFactory()
+        other1, other2 = SiteFactory(), SiteFactory()
+        self._peer_with_pool(other1, other2)  # different pair's pool
+        from apps.core.tests.factories import DrPeerFactory
+        DrPeerFactory(primary_site=site1, secondary_site=site2)
+        req = self._dr_request(site1, site2)
+        with pytest.raises(ValidationError, match="No active shared outbound NAT pools"):
             allocate_nat_mappings(req)
 
     def test_consecutive_dr_requests_get_distinct_addresses(self):
         site1, site2 = SiteFactory(), SiteFactory()
-        NatPoolFactory(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        self._peer_with_pool(site1, site2)
         first = self._dr_request(site1, site2)
         allocate_nat_mappings(first)
         second = self._dr_request(site1, site2)
@@ -292,11 +349,42 @@ class TestDrSharedAllocation:
 
     def test_single_site_does_not_use_shared_pools(self):
         site = SiteFactory()
-        NatPoolFactory(site=None, scope="shared", direction="outbound", cidr="10.111.200.0/24")
+        other1, other2 = SiteFactory(), SiteFactory()
+        self._peer_with_pool(other1, other2)
         req = VpnRequestFactory(directionality="we_initiate", our_endpoint_1_site=site)
         TrafficFlowFactory(vpn_request=req, destination_cidr="172.16.5.10/32")
         with pytest.raises(ValidationError, match=f"site {site.code}"):
             allocate_nat_mappings(req)
+
+
+@pytest.mark.django_db
+class TestDrPeerModel:
+    def test_same_site_twice_rejected(self):
+        from apps.core.models import DrPeer
+        site = SiteFactory()
+        peer = DrPeer(name="bad", primary_site=site, secondary_site=site)
+        with pytest.raises(ValidationError, match="different sites"):
+            peer.full_clean()
+
+    def test_site_cannot_join_two_peers(self):
+        from apps.core.models import DrPeer
+        from apps.core.tests.factories import DrPeerFactory
+        existing = DrPeerFactory()
+        peer = DrPeer(
+            name="second",
+            primary_site=existing.secondary_site,
+            secondary_site=SiteFactory(),
+        )
+        with pytest.raises(ValidationError, match="already part of DR peer"):
+            peer.full_clean()
+
+    def test_for_sites_matches_either_order(self):
+        from apps.core.models import DrPeer
+        from apps.core.tests.factories import DrPeerFactory
+        peer = DrPeerFactory()
+        assert DrPeer.for_sites(peer.primary_site, peer.secondary_site) == peer
+        assert DrPeer.for_sites(peer.secondary_site, peer.primary_site) == peer
+        assert DrPeer.for_sites(peer.primary_site, SiteFactory()) is None
 
 
 # ── allocate_nat_mappings (integration) ──────────────────────────────

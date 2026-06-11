@@ -19,7 +19,7 @@ site conventions (see ``NOTES`` constants).
 
 import netaddr
 
-from apps.core.models import NatDirection
+from apps.core.models import DrPeer, NatDirection
 
 from .nat import directions_for_flow
 
@@ -401,12 +401,30 @@ def _nat_section(vpn_request, site, mappings, tunnels, base):
     return {"title": "NAT Policy", "commands": commands}
 
 
+def _dr_roles(vpn_request):
+    """
+    (primary_site, secondary_site) for a two-site request.
+
+    The configured DR peer is authoritative regardless of which endpoint the
+    requester picked first; without one, falls back to the endpoint order
+    (endpoint 1 = primary).
+    """
+    site1 = vpn_request.our_endpoint_1_site
+    site2 = vpn_request.our_endpoint_2_site
+    if not site1 or not site2 or site1.pk == site2.pk:
+        return None
+    peer = DrPeer.for_sites(site1, site2)
+    if peer:
+        return peer.primary_site, peer.secondary_site
+    return site1, site2
+
+
 def _bgp_nat_advertisement_section(vpn_request, site, mappings, base):
     """
     Advertise the inbound NAT addresses to the vendor over the tunnel BGP
     peering. On a DR pair both endpoints advertise the SAME addresses; the
-    secondary (endpoint 2) prepends its AS so the primary path is preferred
-    and failover to the surviving site is automatic.
+    secondary member prepends its AS so the primary path is preferred and
+    failover to the surviving site is automatic.
     """
     inbound_addrs = []
     for nm in mappings:
@@ -418,11 +436,8 @@ def _bgp_nat_advertisement_section(vpn_request, site, mappings, base):
     p = _net_prefix(site)
     vr = f"{p}network virtual-router {VIRTUAL_ROUTER}"
     rule = f"{vr} protocol bgp policy export rules {base}-nat-adv"
-    is_secondary = (
-        vpn_request.our_endpoint_2_site_id == site.pk
-        and vpn_request.our_endpoint_1_site_id
-        and vpn_request.our_endpoint_1_site_id != site.pk
-    )
+    roles = _dr_roles(vpn_request)
+    is_secondary = bool(roles) and site.pk == roles[1].pk
 
     commands = [f"{rule} enable yes", f"{rule} used-by {base}-pg"]
     for addr in inbound_addrs:
@@ -582,11 +597,12 @@ def generate_site_config(vpn_request, site):
             if adv_section["commands"]:
                 sections.append(adv_section)
                 shared_sections.append(adv_section)
-                if vpn_request.our_endpoint_2_site_id == site.pk:
+                roles = _dr_roles(vpn_request)
+                if roles and site.pk == roles[1].pk:
                     notes.append(
                         "DR secondary: inbound NAT addresses are advertised with "
                         f"AS-path prepend ×{DR_PREPEND_COUNT} so the primary "
-                        f"({vpn_request.our_endpoint_1_site}) is preferred."
+                        f"({roles[0]}) is preferred."
                     )
     else:
         notes.append(

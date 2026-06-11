@@ -318,6 +318,37 @@ class TestNatAndSecurity:
         assert f"{sec} from vpn-vendor" in commands
         assert f"{sec} to trust" in commands
 
+    def test_dr_peer_primary_overrides_endpoint_order_for_prepend(self):
+        # Requester picked the peer's SECONDARY as endpoint 1 — the configured
+        # DR peer decides who prepends, not the wizard order.
+        from apps.core.tests.factories import DrPeerFactory
+
+        primary = SiteFactory(management_type="standalone", template_name="", device_group="", bgp_asn=65001)
+        secondary = SiteFactory(management_type="standalone", template_name="", device_group="", bgp_asn=65002)
+        DrPeerFactory(primary_site=primary, secondary_site=secondary)
+        req = VpnRequestFactory(
+            directionality="vendor_initiates", routing_type="bgp",
+            bgp_remote_asn=65100,
+            our_endpoint_1_site=secondary, our_endpoint_2_site=primary,
+            vendor_endpoint_1_ip="198.51.100.10",
+        )
+        flow = TrafficFlowFactory(vpn_request=req, destination_cidr="10.10.70.100/32")
+        for i, site in enumerate((primary, secondary)):
+            TunnelInterface.objects.create(
+                vpn_request=req, site=site, tunnel_number=101,
+                local_ip=f"10.255.{i}.1", remote_ip=f"10.255.{i}.2",
+                subnet_cidr=f"10.255.{i}.0/30", vendor_endpoint_ip="198.51.100.10",
+            )
+            NatMapping.objects.create(
+                vpn_request=req, site=site, direction="inbound",
+                nat_address="10.111.100.5/32", real_address="10.10.70.100/32",
+                traffic_flow=flow,
+            )
+        primary_cmds = _all_commands(generate_site_config(req, primary))
+        secondary_cmds = _all_commands(generate_site_config(req, secondary))
+        assert not any("as-path prepend" in c for c in primary_cmds)
+        assert any("as-path prepend" in c for c in secondary_cmds)
+
     def test_security_rule_falls_back_to_real_destination(self):
         site = SiteFactory(management_type="standalone", template_name="", device_group="")
         req, _, _ = _make_request_with_tunnel(site=site)

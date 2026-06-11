@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import NatPool, Site, TunnelAddressPool, User, UserRole
+from .models import DrPeer, NatPool, Site, TunnelAddressPool, User, UserRole
 
 
 class UserRoleInline(admin.TabularInline):
@@ -44,6 +44,13 @@ class SiteAdmin(admin.ModelAdmin):
 
 @admin.register(NatPool)
 class NatPoolAdmin(admin.ModelAdmin):
-    list_display = ("site", "scope", "direction", "cidr", "is_active", "created_at")
+    list_display = ("site", "dr_peer", "scope", "direction", "cidr", "is_active", "created_at")
     list_filter = ("scope", "direction", "is_active", "site")
     search_fields = ("cidr", "site__code", "site__name")
+
+
+@admin.register(DrPeer)
+class DrPeerAdmin(admin.ModelAdmin):
+    list_display = ("name", "primary_site", "secondary_site", "is_active", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("name", "primary_site__code", "secondary_site__code")

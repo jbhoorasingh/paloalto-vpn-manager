@@ -1,6 +1,6 @@
 import factory
 
-from apps.core.models import NatPool, Site, TunnelAddressPool, User, UserRole
+from apps.core.models import DrPeer, NatPool, Site, TunnelAddressPool, User, UserRole
 
 
 class UserFactory(factory.django.DjangoModelFactory):
@@ -71,4 +71,14 @@ class NatPoolFactory(factory.django.DjangoModelFactory):
     direction = "outbound"
     cidr = "10.111.96.0/24"
     description = "Default NAT pool"
+    is_active = True
+
+
+class DrPeerFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = DrPeer
+
+    name = factory.Sequence(lambda n: f"DR Pair {n}")
+    primary_site = factory.SubFactory(SiteFactory)
+    secondary_site = factory.SubFactory(SiteFactory)
     is_active = True

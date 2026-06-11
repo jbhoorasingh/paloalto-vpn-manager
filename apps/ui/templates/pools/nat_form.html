@@ -73,10 +73,32 @@
           </select>
         </div>
 
+        {# DR peer (shared scope) #}
+        <div id="dr-peer-field" style="display:none">
+          <label for="id_dr_peer" class="block text-sm font-medium text-slate-700 mb-1.5">
+            DR Peer <span class="text-red-500">*</span>
+          </label>
+          <select name="dr_peer" id="id_dr_peer"
+                  class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+            <option value="">-- Select DR Peer --</option>
+            {% for peer in dr_peers %}
+            <option value="{{ peer.pk }}"
+                    {% if form_data.dr_peer == peer.pk|stringformat:"s" or pool.dr_peer_id == peer.pk %}selected{% endif %}>
+              {{ peer }}
+            </option>
+            {% endfor %}
+          </select>
+          <p class="mt-1.5 text-xs text-slate-500">
+            The firewall pair this pool serves.
+            {% if not dr_peers %}No DR peers exist yet — <a href="{% url 'ui:dr-peer-create' %}" class="font-semibold underline">create one first</a>.{% endif %}
+          </p>
+        </div>
+
         <script>
         function togglePoolSite() {
           var shared = document.getElementById('id_scope').value === 'shared';
           document.getElementById('site-field').style.display = shared ? 'none' : '';
+          document.getElementById('dr-peer-field').style.display = shared ? '' : 'none';
         }
         togglePoolSite();
         </script>

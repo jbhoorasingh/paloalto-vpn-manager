@@ -12,7 +12,14 @@
         Manage per-site NAT pools and tunnel address pools used for VPN allocations.
       </p>
     </div>
-    <div class="mt-4 sm:mt-0 flex gap-3">
+    <div class="mt-4 sm:mt-0 flex gap-3 flex-wrap">
+      <a href="{% url 'ui:dr-peer-create' %}"
+         class="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        Add DR Peer
+      </a>
       <a href="{% url 'ui:tunnel-pool-create' %}"
          class="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
         <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -52,6 +59,69 @@
     </form>
   </div>
 
+  {# DR peers #}
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+      <h2 class="text-base font-semibold text-slate-900">DR Peers</h2>
+      <p class="mt-0.5 text-xs text-slate-500">
+        Paired firewalls. Two-site requests matching a pair allocate the same NAT address at both
+        members from the pair's shared pools; the secondary advertises with AS-path prepend.
+      </p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Name</th>
+            <th class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Primary</th>
+            <th class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Secondary</th>
+            <th class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Shared Pools</th>
+            <th class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+            <th class="relative px-6 py-3.5"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200 bg-white">
+          {% for row in dr_peers %}
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900">{{ row.peer.name }}</td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ row.peer.primary_site }}</td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+              {{ row.peer.secondary_site }}
+              <span class="ml-1 text-xs text-slate-400">(prepend)</span>
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ row.pool_count }}</td>
+            <td class="whitespace-nowrap px-6 py-4">
+              {% if row.peer.is_active %}
+              <span class="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">Active</span>
+              {% else %}
+              <span class="inline-flex items-center rounded-full bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-500/20">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-right text-sm">
+              <div class="flex items-center justify-end gap-3">
+                <a href="{% url 'ui:dr-peer-edit' row.peer.pk %}"
+                   class="text-indigo-600 hover:text-indigo-800 font-medium transition-colors">Edit</a>
+                <form method="post" action="{% url 'ui:dr-peer-delete' row.peer.pk %}"
+                      onsubmit="return confirm('Delete DR peer {{ row.peer.name }}? Its shared NAT pools will be deleted too (existing mappings keep their addresses).');">
+                  {% csrf_token %}
+                  <button type="submit" class="text-red-600 hover:text-red-800 font-medium transition-colors">Delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="px-6 py-10 text-center">
+              <p class="text-sm font-medium text-slate-900">No DR peers configured</p>
+              <p class="mt-1 text-sm text-slate-500">Pair two firewalls to enable DR-shared NAT for two-site requests.</p>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   {# NAT pools #}
   <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
     <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
@@ -80,7 +150,8 @@
               {% if row.pool.site %}
                 {{ row.pool.site }}
               {% else %}
-                <span class="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-inset ring-violet-600/20">Shared (DR)</span>
+                <span class="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-inset ring-violet-600/20">Shared</span>
+                <span class="ml-1 text-xs text-slate-500">{{ row.pool.dr_peer.name|default:"--" }}</span>
               {% endif %}
             </td>
             <td class="whitespace-nowrap px-6 py-4 text-sm">

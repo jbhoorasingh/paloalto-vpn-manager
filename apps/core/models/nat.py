@@ -43,6 +43,11 @@ class NatPool(models.Model):
         max_length=10, choices=NatPoolScope.choices, default=NatPoolScope.SITE,
         help_text="Site-specific (single-site requests) or shared (DR-pair requests)",
     )
+    dr_peer = models.ForeignKey(
+        "core.DrPeer", on_delete=models.CASCADE, related_name="nat_pools",
+        null=True, blank=True,
+        help_text="Owning DR peer for shared pools; empty for site-specific pools",
+    )
     direction = models.CharField(
         max_length=10,
         choices=NatDirection.choices,
@@ -61,16 +66,27 @@ class NatPool(models.Model):
         ordering = ["site", "direction", "cidr"]
 
     def __str__(self):
-        owner = self.site.code if self.site else "shared"
+        if self.site:
+            owner = self.site.code
+        elif self.dr_peer:
+            owner = self.dr_peer.name
+        else:
+            owner = "shared"
         return f"{owner} — {self.get_direction_display()} {self.cidr}"
 
     def clean(self):
         super().clean()
-        # Scope/site consistency
-        if self.scope == NatPoolScope.SHARED and self.site_id:
-            raise ValidationError({"site": "Shared (DR) pools must not be tied to a site."})
-        if self.scope == NatPoolScope.SITE and not self.site_id:
-            raise ValidationError({"site": "Site-specific pools require a site."})
+        # Scope/owner consistency
+        if self.scope == NatPoolScope.SHARED:
+            if self.site_id:
+                raise ValidationError({"site": "Shared (DR) pools must not be tied to a site."})
+            if not self.dr_peer_id:
+                raise ValidationError({"dr_peer": "Shared pools must be assigned to a DR peer."})
+        else:
+            if not self.site_id:
+                raise ValidationError({"site": "Site-specific pools require a site."})
+            if self.dr_peer_id:
+                raise ValidationError({"dr_peer": "Site-specific pools must not have a DR peer."})
 
         # Validate CIDR format
         try:

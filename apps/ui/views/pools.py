@@ -4,7 +4,14 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 
-from apps.core.models import NatDirection, NatPool, NatPoolScope, Site, TunnelAddressPool
+from apps.core.models import (
+    DrPeer,
+    NatDirection,
+    NatPool,
+    NatPoolScope,
+    Site,
+    TunnelAddressPool,
+)
 from apps.vpn.models.tunnel import TunnelInterface
 
 
@@ -40,10 +47,10 @@ def _tunnel_pool_usage(pool):
 def pool_list_view(request):
     site_id = request.GET.get("site", "")
 
-    nat_pools = NatPool.objects.select_related("site")
+    nat_pools = NatPool.objects.select_related("site", "dr_peer")
     tunnel_pools = TunnelAddressPool.objects.select_related("site")
     if site_id:
-        # Shared (DR) pools apply to every site, so they always show.
+        # Shared (DR) pools apply to both peer members, so they always show.
         nat_pools = nat_pools.filter(Q(site_id=site_id) | Q(scope=NatPoolScope.SHARED))
         tunnel_pools = tunnel_pools.filter(site_id=site_id)
 
@@ -57,10 +64,16 @@ def pool_list_view(request):
         used, total, percent = _tunnel_pool_usage(pool)
         tunnel_rows.append({"pool": pool, "used": used, "total": total, "percent": percent})
 
+    dr_peers = [
+        {"peer": peer, "pool_count": peer.nat_pools.count()}
+        for peer in DrPeer.objects.select_related("primary_site", "secondary_site")
+    ]
+
     return render(request, "pools/list.html", {
         "nav_active": "pool-list",
         "nat_rows": nat_rows,
         "tunnel_rows": tunnel_rows,
+        "dr_peers": dr_peers,
         "sites": Site.objects.all(),
         "selected_site": site_id,
     })
@@ -74,16 +87,21 @@ def _pool_form_context(form_title, pool=None, errors=None, form_data=None):
         "errors": errors or {},
         "form_data": form_data or {},
         "sites": Site.objects.filter(is_active=True),
+        "dr_peers": DrPeer.objects.filter(is_active=True).select_related(
+            "primary_site", "secondary_site"
+        ),
         "directions": NatDirection.choices,
     }
 
 
 def _save_nat_pool(request, pool):
     pool.scope = request.POST.get("scope", NatPoolScope.SITE)
-    pool.site_id = (
-        None if pool.scope == NatPoolScope.SHARED
-        else request.POST.get("site") or None
-    )
+    if pool.scope == NatPoolScope.SHARED:
+        pool.site_id = None
+        pool.dr_peer_id = request.POST.get("dr_peer") or None
+    else:
+        pool.site_id = request.POST.get("site") or None
+        pool.dr_peer_id = None
     pool.direction = request.POST.get("direction", "")
     pool.cidr = request.POST.get("cidr", "").strip()
     pool.description = request.POST.get("description", "").strip()
@@ -172,6 +190,65 @@ def tunnel_pool_delete_view(request, pk):
     pool = get_object_or_404(TunnelAddressPool, pk=pk)
     if request.method == "POST":
         pool.delete()
+    return redirect("ui:pool-list")
+
+
+def _save_dr_peer(request, peer):
+    peer.name = request.POST.get("name", "").strip()
+    peer.primary_site_id = request.POST.get("primary_site") or None
+    peer.secondary_site_id = request.POST.get("secondary_site") or None
+    peer.description = request.POST.get("description", "").strip()
+    peer.is_active = "is_active" in request.POST
+    peer.full_clean()
+    peer.save()
+
+
+def _dr_peer_form_context(form_title, peer=None, errors=None, form_data=None):
+    return {
+        "nav_active": "pool-list",
+        "form_title": form_title,
+        "peer": peer,
+        "errors": errors or {},
+        "form_data": form_data or {},
+        "sites": Site.objects.filter(is_active=True),
+    }
+
+
+@login_required
+def dr_peer_create_view(request):
+    if request.method == "POST":
+        peer = DrPeer()
+        try:
+            _save_dr_peer(request, peer)
+            return redirect("ui:pool-list")
+        except ValidationError as e:
+            return render(request, "pools/dr_peer_form.html", _dr_peer_form_context(
+                "Add DR Peer", errors=e.message_dict, form_data=request.POST,
+            ))
+    return render(request, "pools/dr_peer_form.html", _dr_peer_form_context("Add DR Peer"))
+
+
+@login_required
+def dr_peer_edit_view(request, pk):
+    peer = get_object_or_404(DrPeer, pk=pk)
+    if request.method == "POST":
+        try:
+            _save_dr_peer(request, peer)
+            return redirect("ui:pool-list")
+        except ValidationError as e:
+            return render(request, "pools/dr_peer_form.html", _dr_peer_form_context(
+                "Edit DR Peer", peer=peer, errors=e.message_dict, form_data=request.POST,
+            ))
+    return render(request, "pools/dr_peer_form.html", _dr_peer_form_context(
+        "Edit DR Peer", peer=peer,
+    ))
+
+
+@login_required
+def dr_peer_delete_view(request, pk):
+    peer = get_object_or_404(DrPeer, pk=pk)
+    if request.method == "POST":
+        peer.delete()
     return redirect("ui:pool-list")
 
 

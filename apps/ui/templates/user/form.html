@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}{{ form_title|default:"Add User" }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+  {# Page header #}
+  <div>
+    <nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+      <a href="{% url 'ui:user-list' %}" class="hover:text-slate-700 transition-colors">Users</a>
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+      </svg>
+      <span class="text-slate-900 font-medium">{{ form_title|default:"Add User" }}</span>
+    </nav>
+    <h1 class="text-2xl font-bold text-slate-900">{{ form_title|default:"Add New User" }}</h1>
+    <p class="mt-1 text-sm text-slate-500">
+      {% if edit_user %}
+        Update the user account details below.
+      {% else %}
+        Create a new platform user account.
+      {% endif %}
+    </p>
+  </div>
+
+  {# User form #}
+  <form method="post" class="space-y-6">
+    {% csrf_token %}
+
+    {# Basic Information #}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h2 class="text-base font-semibold text-slate-900">Basic Information</h2>
+      </div>
+      <div class="px-6 py-6 space-y-5">
+        {# Username #}
+        <div>
+          <label for="id_username" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Username <span class="text-red-500">*</span>
+          </label>
+          <input type="text"
+                 name="username"
+                 id="id_username"
+                 value="{{ edit_user.username|default:'' }}"
+                 placeholder="e.g. jsmith"
+                 required
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          {# First Name #}
+          <div>
+            <label for="id_first_name" class="block text-sm font-medium text-slate-700 mb-1.5">First Name</label>
+            <input type="text"
+                   name="first_name"
+                   id="id_first_name"
+                   value="{{ edit_user.first_name|default:'' }}"
+                   placeholder="John"
+                   class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+          </div>
+          {# Last Name #}
+          <div>
+            <label for="id_last_name" class="block text-sm font-medium text-slate-700 mb-1.5">Last Name</label>
+            <input type="text"
+                   name="last_name"
+                   id="id_last_name"
+                   value="{{ edit_user.last_name|default:'' }}"
+                   placeholder="Smith"
+                   class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+          </div>
+        </div>
+
+        {# Email #}
+        <div>
+          <label for="id_email" class="block text-sm font-medium text-slate-700 mb-1.5">Email</label>
+          <input type="email"
+                 name="email"
+                 id="id_email"
+                 value="{{ edit_user.email|default:'' }}"
+                 placeholder="jsmith@company.com"
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+        </div>
+      </div>
+    </div>
+
+    {# Role & Department #}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h2 class="text-base font-semibold text-slate-900">Roles & Department</h2>
+      </div>
+      <div class="px-6 py-6 space-y-5">
+        {# Roles (checkboxes) #}
+        <div>
+          <span class="block text-sm font-medium text-slate-700 mb-2">Roles</span>
+          <div class="space-y-2">
+            {% for value, label in role_choices %}
+            <label class="flex items-center gap-3">
+              <input type="checkbox"
+                     name="roles"
+                     value="{{ value }}"
+                     {% if value in current_roles %}checked{% endif %}
+                     class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600">
+              <span class="text-sm text-slate-700">{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <p class="mt-1.5 text-xs text-slate-500">Select one or more roles for this user.</p>
+        </div>
+
+        {# Department #}
+        <div>
+          <label for="id_department" class="block text-sm font-medium text-slate-700 mb-1.5">Department</label>
+          <input type="text"
+                 name="department"
+                 id="id_department"
+                 value="{{ edit_user.department|default:'' }}"
+                 placeholder="e.g. Information Security"
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+        </div>
+
+        {# Distribution List Email #}
+        <div>
+          <label for="id_distribution_list_email" class="block text-sm font-medium text-slate-700 mb-1.5">Distribution List Email</label>
+          <input type="email"
+                 name="distribution_list_email"
+                 id="id_distribution_list_email"
+                 value="{{ edit_user.distribution_list_email|default:'' }}"
+                 placeholder="team-dl@company.com"
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+        </div>
+      </div>
+    </div>
+
+    {# Account #}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h2 class="text-base font-semibold text-slate-900">Account</h2>
+      </div>
+      <div class="px-6 py-6 space-y-5">
+        {# Password #}
+        <div>
+          <label for="id_password" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Password {% if not edit_user %}<span class="text-red-500">*</span>{% endif %}
+          </label>
+          <input type="password"
+                 name="password"
+                 id="id_password"
+                 placeholder="{% if edit_user %}Leave blank to keep current password{% else %}Enter a password{% endif %}"
+                 {% if not edit_user %}required{% endif %}
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+          {% if edit_user %}
+          <p class="mt-1.5 text-xs text-slate-500">Leave blank to keep the current password unchanged.</p>
+          {% endif %}
+        </div>
+
+        {# Active status #}
+        <div class="flex items-center gap-3">
+          <input type="checkbox"
+                 name="is_active"
+                 id="id_is_active"
+                 {% if edit_user.is_active or not edit_user %}checked{% endif %}
+                 class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600">
+          <label for="id_is_active" class="text-sm font-medium text-slate-700">Account is active</label>
+        </div>
+      </div>
+    </div>
+
+    {# Actions #}
+    <div class="flex items-center justify-end gap-3 pt-2">
+      <a href="{% url 'ui:user-list' %}"
+         class="rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
+        Cancel
+      </a>
+      <button type="submit"
+              class="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-colors">
+        {% if edit_user %}Update User{% else %}Create User{% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

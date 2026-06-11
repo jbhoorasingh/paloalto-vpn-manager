@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+  {# Page header #}
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Dashboard</h1>
+      <p class="mt-1 text-sm text-slate-500">
+        Overview of your VPN requests and activity.
+      </p>
+    </div>
+    <div class="mt-4 sm:mt-0">
+      <a href="{% url 'ui:wizard-create' %}"
+         class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-colors">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        Create New VPN Request
+      </a>
+    </div>
+  </div>
+
+  {# Stats panel - Vue island #}
+  <div data-vue-component="stats-panel" data-vue-props='{{ stats_json }}'></div>
+
+  {# My Requests table - Vue island #}
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-200">
+      <h2 class="text-lg font-semibold text-slate-900">My Requests</h2>
+      <p class="mt-1 text-sm text-slate-500">Your recent VPN access requests and their current status.</p>
+    </div>
+    <div class="p-6">
+      <div data-vue-component="requests-table" data-vue-props='{{ requests_json }}'></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

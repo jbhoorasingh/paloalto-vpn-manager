@@ -1,0 +1,53 @@
+{# Top navigation bar #}
+<header class="sticky top-0 z-30 bg-white border-b border-slate-200">
+  <div class="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
+    {# Mobile menu button #}
+    <button type="button"
+            onclick="document.getElementById('mobile-sidebar').classList.toggle('hidden')"
+            class="lg:hidden inline-flex items-center justify-center rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500">
+      <span class="sr-only">Open sidebar</span>
+      <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+      </svg>
+    </button>
+
+    {# App title - visible on mobile #}
+    <h1 class="lg:hidden text-lg font-semibold text-slate-800">VPN Management</h1>
+
+    {# Spacer #}
+    <div class="hidden lg:block"></div>
+
+    {# Right side - user info #}
+    <div class="flex items-center gap-4">
+      {% if user.is_authenticated %}
+        <div class="flex items-center gap-3">
+          <div class="hidden sm:flex items-center gap-2">
+            <div class="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center">
+              <span class="text-sm font-medium text-indigo-700">
+                {{ user.get_full_name|default:user.username|make_list|first|upper }}
+              </span>
+            </div>
+            <div class="text-sm">
+              <p class="font-medium text-slate-700">{{ user.get_full_name|default:user.username }}</p>
+              {% if user.is_staff %}
+                <p class="text-xs text-slate-500">Administrator</p>
+              {% endif %}
+            </div>
+          </div>
+          <a href="{% url 'logout' %}"
+             class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition-colors">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+            </svg>
+            Logout
+          </a>
+        </div>
+      {% else %}
+        <a href="{% url 'login' %}"
+           class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 transition-colors">
+          Sign In
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</header>

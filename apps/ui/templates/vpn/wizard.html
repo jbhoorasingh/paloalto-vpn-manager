@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}{% if request_pk %}Edit VPN Request{% else %}New VPN Request{% endif %}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  {# Page header #}
+  <div>
+    <nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+      <a href="{% url 'ui:request-list' %}" class="hover:text-slate-700 transition-colors">VPN Requests</a>
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+      </svg>
+      <span class="text-slate-900 font-medium">
+        {% if request_pk %}Edit Request{% else %}Create New Request{% endif %}
+      </span>
+    </nav>
+    <h1 class="text-2xl font-bold text-slate-900">
+      {% if request_pk %}Edit VPN Request{% else %}New VPN Request{% endif %}
+    </h1>
+    <p class="mt-1 text-sm text-slate-500">
+      Complete each step of the wizard to configure your VPN access request.
+    </p>
+  </div>
+
+  {# Vue wizard island - the entire wizard is handled by Vue #}
+  <div data-vue-component="wizard" data-vue-props='{{ wizard_props_json }}'></div>
+</div>
+{% endblock %}

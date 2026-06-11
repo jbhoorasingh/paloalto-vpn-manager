@@ -1,0 +1,1012 @@
+{% extends "base.html" %}
+
+{% block title %}{{ vpn_request.reference_number }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  {# Breadcrumb #}
+  <nav class="flex items-center gap-2 text-sm text-slate-500">
+    <a href="{% url 'ui:request-list' %}" class="hover:text-slate-700 transition-colors">VPN Requests</a>
+    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+    </svg>
+    <span class="text-slate-900 font-medium">{{ vpn_request.reference_number }}</span>
+  </nav>
+
+  {# Request header #}
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-5 sm:flex sm:items-start sm:justify-between">
+      <div class="space-y-2">
+        <div class="flex items-center gap-3 flex-wrap">
+          <h1 class="text-xl font-bold text-slate-900">{{ vpn_request.reference_number }}</h1>
+          {# Status badge #}
+          {% with status=vpn_request.status %}
+          <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold
+            {% if status == 'draft' %}bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-300
+            {% elif status == 'submitted' %}bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20
+            {% elif status == 'infosec_approved' or status == 'network_approved' %}bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20
+            {% elif status == 'infosec_changes_requested' or status == 'network_changes_requested' %}bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20
+            {% elif status == 'rejected' or status == 'decommissioned' %}bg-red-50 text-red-700 ring-1 ring-inset ring-red-600/20
+            {% elif status == 'active' %}bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20
+            {% elif status == 'deployed' or status == 'deploy_ready' or status == 'scheduled' %}bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20
+            {% elif status == 'recert_due' or status == 'recert_in_review' %}bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-600/20
+            {% else %}bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-300
+            {% endif %}">
+            {{ vpn_request.get_status_display }}
+          </span>
+          {% endwith %}
+        </div>
+        <h2 class="text-lg text-slate-700">{{ vpn_request.title|default:"Untitled Request" }}</h2>
+        <div class="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
+          <span class="flex items-center gap-1.5">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+            </svg>
+            {{ vpn_request.vendor.name|default:"No vendor" }}
+          </span>
+          <span class="flex items-center gap-1.5">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+            </svg>
+            {{ vpn_request.requester.get_full_name|default:vpn_request.requester.username }}
+          </span>
+          <span class="flex items-center gap-1.5">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+            </svg>
+            Created {{ vpn_request.created_at|date:"M d, Y" }}
+          </span>
+        </div>
+      </div>
+      <div class="mt-4 sm:mt-0 flex gap-2">
+        {% if vpn_request.status == 'draft' %}
+        <a href="{% url 'ui:wizard-edit' vpn_request.pk %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+          </svg>
+          Edit Draft
+        </a>
+        {% elif vpn_request.status == 'infosec_changes_requested' or vpn_request.status == 'network_changes_requested' %}
+        {% if vpn_request.requester == request.user %}
+        <a href="{% url 'ui:wizard-edit' vpn_request.pk %}"
+           class="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-400 transition-colors">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+          </svg>
+          Edit &amp; Resubmit
+        </a>
+        {% endif %}
+        {% endif %}
+        <a href="{% url 'ui:request-delete' vpn_request.pk %}"
+           class="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-red-600 ring-1 ring-inset ring-red-300 hover:bg-red-50 transition-colors">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+          </svg>
+          Delete
+        </a>
+      </div>
+    </div>
+  </div>
+
+  {# Tabs #}
+  <div id="detail-tabs">
+    {# Tab navigation #}
+    <div class="border-b border-slate-200">
+      <nav class="flex gap-6 px-1" aria-label="Tabs">
+        <button onclick="switchTab('overview')" data-tab-btn="overview"
+                class="whitespace-nowrap border-b-2 border-indigo-500 text-indigo-600 py-3 px-1 text-sm font-medium transition-colors">
+          Overview
+        </button>
+        <button onclick="switchTab('flows')" data-tab-btn="flows"
+                class="whitespace-nowrap border-b-2 border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 py-3 px-1 text-sm font-medium transition-colors">
+          Traffic Flows
+          <span class="ml-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+            {{ vpn_request.flows.count }}
+          </span>
+        </button>
+        <button onclick="switchTab('audit')" data-tab-btn="audit"
+                class="whitespace-nowrap border-b-2 border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 py-3 px-1 text-sm font-medium transition-colors">
+          Audit Log
+        </button>
+        <button onclick="switchTab('approvals')" data-tab-btn="approvals"
+                class="whitespace-nowrap border-b-2 border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 py-3 px-1 text-sm font-medium transition-colors">
+          Approvals
+          {% if approval_records %}
+          <span class="ml-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+            {{ approval_records|length }}
+          </span>
+          {% endif %}
+        </button>
+        <button onclick="switchTab('allocations')" data-tab-btn="allocations"
+                class="whitespace-nowrap border-b-2 border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 py-3 px-1 text-sm font-medium transition-colors">
+          Allocations
+          {% if has_allocations %}
+          <span class="ml-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+            {{ allocation_count }}
+          </span>
+          {% endif %}
+        </button>
+        <button onclick="switchTab('config')" data-tab-btn="config"
+                class="whitespace-nowrap border-b-2 border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 py-3 px-1 text-sm font-medium transition-colors">
+          Config
+        </button>
+      </nav>
+    </div>
+
+    {# Overview tab #}
+    <div id="tab-overview" class="mt-6 space-y-6">
+      {# Business Details #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-base font-semibold text-slate-900">Business Details</h3>
+        </div>
+        <div class="px-6 py-5">
+          <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Purpose</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.purpose|default:"Not specified"|linebreaksbr }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Directionality</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.get_directionality_display|default:"Not specified" }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Data Description</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.data_description|default:"Not specified" }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Data Classification</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.data_classification|default:"Not specified" }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Applications</dt>
+              <dd class="mt-1 text-sm text-slate-900">
+                {% for app in vpn_request.applications.all %}
+                  <span class="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/20 mr-1 mb-1">
+                    {{ app.name }}
+                  </span>
+                {% empty %}
+                  <span class="text-slate-400">None assigned</span>
+                {% endfor %}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      {# Topology / Endpoints #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-base font-semibold text-slate-900">Topology & Endpoints</h3>
+        </div>
+        <div class="px-6 py-5 space-y-6">
+          {# Topology diagram #}
+          {% if vpn_request.topology_type %}
+          <div class="max-w-md mx-auto">
+            <div data-vue-component="topology-diagram"
+                 data-vue-props='{{ topology_json|safe }}'></div>
+          </div>
+          {% endif %}
+
+          <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5">
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Topology Type</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.get_topology_type_display|default:"Not specified" }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Vendor Endpoints</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.vendor_endpoints_count }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Vendor Endpoint 1 IP</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900">{{ vpn_request.vendor_endpoint_1_ip|default:"Not specified" }}</dd>
+            </div>
+            {% if vpn_request.vendor_endpoints_count == 2 %}
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Vendor Endpoint 2 IP</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900">{{ vpn_request.vendor_endpoint_2_ip|default:"Not specified" }}</dd>
+            </div>
+            {% endif %}
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Our Site (Endpoint 1)</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.our_endpoint_1_site|default:"Not specified" }}</dd>
+            </div>
+            {% if vpn_request.vendor_endpoints_count == 2 %}
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Our Site (Endpoint 2)</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.our_endpoint_2_site|default:"Not specified" }}</dd>
+            </div>
+            {% endif %}
+          </dl>
+        </div>
+      </div>
+
+      {# IKE / Phase 1 #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-base font-semibold text-slate-900">IKE Configuration (Phase 1)</h3>
+        </div>
+        <div class="px-6 py-5">
+          <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-5">
+            <div>
+              <dt class="text-sm font-medium text-slate-500">IKE Version</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.get_ike_version_display }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Auth Method</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.get_auth_method_display }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Encryption</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900">{{ vpn_request.ike_encryption|default:"--" }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Integrity</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900">{{ vpn_request.ike_integrity|default:"--" }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">DH Group</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900">{{ vpn_request.ike_dh_group|default:"--" }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Lifetime</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.ike_lifetime|default:"--" }}{% if vpn_request.ike_lifetime %} seconds{% endif %}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">DPD Enabled</dt>
+              <dd class="mt-1 text-sm text-slate-900">
+                {% if vpn_request.dpd_enabled %}
+                  <span class="inline-flex items-center gap-1 text-emerald-700">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                    Yes
+                  </span>
+                {% else %}
+                  <span class="text-slate-400">No</span>
+                {% endif %}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      {# IPsec / Phase 2 #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-base font-semibold text-slate-900">IPsec Configuration (Phase 2)</h3>
+        </div>
+        <div class="px-6 py-5">
+          <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-5">
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Encryption</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900">{{ vpn_request.ipsec_encryption|default:"--" }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Integrity</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900">{{ vpn_request.ipsec_integrity|default:"--" }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">PFS Group</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900">{{ vpn_request.ipsec_pfs_group|default:"--" }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Lifetime</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.ipsec_lifetime|default:"--" }}{% if vpn_request.ipsec_lifetime %} seconds{% endif %}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Tunnel Mode</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.tunnel_mode|default:"--" }}</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      {# Routing #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-base font-semibold text-slate-900">Routing & NAT</h3>
+        </div>
+        <div class="px-6 py-5">
+          <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-5">
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Routing Type</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.get_routing_type_display|default:"Not specified" }}</dd>
+            </div>
+            {% if vpn_request.tunnel_ip_assignment %}
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Tunnel IP Assignment</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.get_tunnel_ip_assignment_display }}</dd>
+            </div>
+            {% endif %}
+            {% if vpn_request.routing_type == 'bgp' %}
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Vendor EP1 ASN</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900">{{ vpn_request.bgp_remote_asn|default:"--" }}</dd>
+            </div>
+            {% if vpn_request.vendor_endpoints_count == 2 %}
+            <div>
+              <dt class="text-sm font-medium text-slate-500">Vendor EP2 ASN</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900">{{ vpn_request.bgp_remote_asn_2|default:vpn_request.bgp_remote_asn|default:"--" }}</dd>
+            </div>
+            {% endif %}
+            <div>
+              <dt class="text-sm font-medium text-slate-500">BGP Authentication</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.bgp_auth_enabled|yesno:"Enabled,Disabled" }}</dd>
+            </div>
+            {% endif %}
+            {% if vpn_request.routing_type == 'static' and vpn_request.vendor_cidrs %}
+            <div class="sm:col-span-2">
+              <dt class="text-sm font-medium text-slate-500">Vendor CIDRs</dt>
+              <dd class="mt-1 text-sm font-mono text-slate-900 whitespace-pre-line">{{ vpn_request.vendor_cidrs }}</dd>
+            </div>
+            {% endif %}
+            <div>
+              <dt class="text-sm font-medium text-slate-500">NAT Supported</dt>
+              <dd class="mt-1 text-sm text-slate-900">
+                {% if vpn_request.nat_supported is None %}
+                  <span class="text-slate-400">Not specified</span>
+                {% elif vpn_request.nat_supported %}
+                  <span class="text-emerald-700">Yes</span>
+                {% else %}
+                  <span class="text-red-700">No</span>
+                {% endif %}
+              </dd>
+            </div>
+            {% if vpn_request.nat_exception_reason %}
+            <div class="sm:col-span-2">
+              <dt class="text-sm font-medium text-slate-500">NAT Exception Reason</dt>
+              <dd class="mt-1 text-sm text-slate-900">{{ vpn_request.nat_exception_reason }}</dd>
+            </div>
+            {% endif %}
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    {# Flows tab #}
+    <div id="tab-flows" class="mt-6 hidden">
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <h3 class="text-base font-semibold text-slate-900">Traffic Flows</h3>
+          <span class="text-sm text-slate-500">{{ vpn_request.flows.count }} flow{{ vpn_request.flows.count|pluralize }}</span>
+        </div>
+        <div class="p-6">
+          {% if flows %}
+          <div class="overflow-x-auto rounded-lg border border-slate-200">
+            <table class="min-w-full divide-y divide-slate-200">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Source CIDR</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Destination CIDR</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Direction</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Protocol</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Ports</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Description</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-200 bg-white">
+                {% for flow in flows %}
+                <tr class="hover:bg-slate-50">
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-900">{{ flow.source_cidr }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-900">{{ flow.destination_cidr }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm">
+                    {% if flow.direction == 'outbound' %}
+                    <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">Outbound →</span>
+                    {% elif flow.direction == 'inbound' %}
+                    <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">← Inbound</span>
+                    {% else %}
+                    <span class="text-slate-400">--</span>
+                    {% endif %}
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-slate-900">{{ flow.protocol|upper }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-900">{{ flow.destination_ports|default:"any" }}</td>
+                  <td class="px-4 py-3 text-sm text-slate-600">{{ flow.description|default:"---" }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="text-center py-8">
+            <svg class="mx-auto h-10 w-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            <p class="mt-2 text-sm text-slate-500">No traffic flows defined.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Audit log tab #}
+    <div id="tab-audit" class="mt-6 hidden">
+      {# Collapsible request snapshot #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+        <details>
+          <summary class="px-6 py-4 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors flex items-center gap-2">
+            <svg class="h-4 w-4 text-slate-500 transition-transform details-open-rotate" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+            <h3 class="text-base font-semibold text-slate-900">Current Request Data</h3>
+            <span class="text-xs text-slate-500 ml-2">(click to expand)</span>
+          </summary>
+          <div class="px-6 py-5 border-t border-slate-200">
+            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+              {% for item in request_snapshot %}
+              <div class="py-1">
+                <dt class="text-xs font-medium text-slate-500 uppercase tracking-wider">{{ item.label }}</dt>
+                <dd class="mt-0.5 text-sm text-slate-900 break-words">{{ item.value }}</dd>
+              </div>
+              {% endfor %}
+            </dl>
+          </div>
+        </details>
+      </div>
+
+      {# Audit timeline #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-base font-semibold text-slate-900">Audit Log</h3>
+          <p class="text-xs text-slate-500 mt-0.5">All events for this request in chronological order</p>
+        </div>
+        <div class="px-6 py-5">
+          {% if audit_timeline %}
+          <div class="flow-root">
+            <ul role="list" class="-mb-8">
+              {% for event in audit_timeline %}
+              <li>
+                <div class="relative pb-8">
+                  {% if not forloop.last %}
+                  <span class="absolute left-4 top-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true"></span>
+                  {% endif %}
+                  <div class="relative flex gap-4">
+                    {# Icon circle #}
+                    <div class="flex items-center justify-center h-8 w-8 rounded-full ring-8 ring-white
+                      {% if event.color == 'slate' %}bg-slate-100
+                      {% elif event.color == 'blue' %}bg-blue-100
+                      {% elif event.color == 'emerald' %}bg-emerald-100
+                      {% elif event.color == 'amber' %}bg-amber-100
+                      {% elif event.color == 'red' %}bg-red-100
+                      {% elif event.color == 'indigo' %}bg-indigo-100
+                      {% elif event.color == 'teal' %}bg-teal-100
+                      {% endif %}">
+                      {% if event.icon == 'plus' %}
+                      <svg class="h-4 w-4 {% if event.color == 'slate' %}text-slate-500{% endif %}" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                      {% elif event.icon == 'send' %}
+                      <svg class="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                      </svg>
+                      {% elif event.icon == 'check' %}
+                      <svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                      {% elif event.icon == 'edit' %}
+                      <svg class="h-4 w-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                      </svg>
+                      {% elif event.icon == 'x' %}
+                      <svg class="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      {% elif event.icon == 'pencil' %}
+                      <svg class="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                      </svg>
+                      {% elif event.icon == 'tunnel' %}
+                      <svg class="h-4 w-4 text-teal-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
+                      </svg>
+                      {% elif event.icon == 'nat' %}
+                      <svg class="h-4 w-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-9L21 3m0 0l-4.5 4.5M21 3H7.5" />
+                      </svg>
+                      {% endif %}
+                    </div>
+
+                    {# Event content #}
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm text-slate-900">
+                        {% if event.actor %}
+                        <span class="font-medium">{{ event.actor.get_full_name|default:event.actor.username }}</span>
+                        {% elif event.type == 'tunnel_allocated' %}
+                        <span class="font-medium text-teal-700">System</span>
+                        {% elif event.type == 'nat_allocated' %}
+                        <span class="font-medium text-purple-700">System</span>
+                        {% endif %}
+                        {{ event.summary }}
+                      </p>
+                      <p class="mt-0.5 text-xs text-slate-500">{{ event.timestamp|date:"M d, Y g:i A" }}</p>
+
+                      {# Reviewer comments (for approval events) #}
+                      {% if event.comments %}
+                      <div class="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 border border-slate-200">
+                        <span class="font-medium text-slate-700">Comment:</span> {{ event.comments }}
+                      </div>
+                      {% endif %}
+
+                      {# Tunnel allocation details #}
+                      {% if event.allocation %}
+                      <details class="mt-2">
+                        <summary class="text-xs font-medium text-teal-600 cursor-pointer hover:text-teal-800 transition-colors">
+                          View allocation details
+                        </summary>
+                        <div class="mt-2 rounded-lg border border-slate-200 overflow-hidden">
+                          <dl class="grid grid-cols-2 gap-x-4 gap-y-1 px-3 py-2 text-sm bg-white">
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">Tunnel #</dt>
+                              <dd class="font-mono text-slate-900">tunnel.{{ event.allocation.tunnel_number }}</dd>
+                            </div>
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">Site</dt>
+                              <dd class="text-slate-900">{{ event.allocation.site }}</dd>
+                            </div>
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">Local IP</dt>
+                              <dd class="font-mono text-slate-900">{{ event.allocation.local_ip }}</dd>
+                            </div>
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">Remote IP</dt>
+                              <dd class="font-mono text-slate-900">{{ event.allocation.remote_ip }}</dd>
+                            </div>
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">Subnet</dt>
+                              <dd class="font-mono text-slate-900">{{ event.allocation.subnet }}</dd>
+                            </div>
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">Vendor EP</dt>
+                              <dd class="font-mono text-slate-900">{{ event.allocation.vendor_ep }}</dd>
+                            </div>
+                          </dl>
+                        </div>
+                      </details>
+                      {% endif %}
+
+                      {# NAT mapping details #}
+                      {% if event.nat %}
+                      <details class="mt-2">
+                        <summary class="text-xs font-medium text-purple-600 cursor-pointer hover:text-purple-800 transition-colors">
+                          View NAT mapping details
+                        </summary>
+                        <div class="mt-2 rounded-lg border border-slate-200 overflow-hidden">
+                          <dl class="grid grid-cols-2 gap-x-4 gap-y-1 px-3 py-2 text-sm bg-white">
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">Direction</dt>
+                              <dd class="text-slate-900">{{ event.nat.direction }}</dd>
+                            </div>
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">Endpoint</dt>
+                              <dd class="text-slate-900">{{ event.nat.site }}</dd>
+                            </div>
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">NAT Address</dt>
+                              <dd class="font-mono text-slate-900">{{ event.nat.nat_address }}</dd>
+                            </div>
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">Real Address</dt>
+                              <dd class="font-mono text-slate-900">{{ event.nat.real_address }}</dd>
+                            </div>
+                            <div>
+                              <dt class="text-xs font-medium text-slate-500">Pool</dt>
+                              <dd class="font-mono text-slate-900">{{ event.nat.pool }}</dd>
+                            </div>
+                          </dl>
+                        </div>
+                      </details>
+                      {% endif %}
+
+                      {# Field changes (for field_change events) #}
+                      {% if event.changes %}
+                      <details class="mt-2">
+                        <summary class="text-xs font-medium text-indigo-600 cursor-pointer hover:text-indigo-800 transition-colors">
+                          View changed fields
+                        </summary>
+                        <div class="mt-2 rounded-lg border border-slate-200 overflow-hidden">
+                          <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead class="bg-slate-50">
+                              <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Field</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Old Value</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-slate-500">New Value</th>
+                              </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 bg-white">
+                              {% for field_key, change in event.changes.items %}
+                              <tr>
+                                <td class="px-3 py-2 text-slate-700 font-medium whitespace-nowrap">{{ change.label }}</td>
+                                <td class="px-3 py-2 text-red-600 bg-red-50 font-mono text-xs break-all">{{ change.old }}</td>
+                                <td class="px-3 py-2 text-emerald-700 bg-emerald-50 font-mono text-xs break-all">{{ change.new }}</td>
+                              </tr>
+                              {% endfor %}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% else %}
+          <p class="text-sm text-slate-500 text-center py-4">No audit events recorded yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Approvals tab #}
+    <div id="tab-approvals" class="mt-6 hidden">
+      {# Workflow pipeline diagram #}
+      <div class="mb-6">
+        <div data-vue-component="workflow-diagram"
+             data-vue-props='{{ workflow_json|safe }}'></div>
+      </div>
+
+      {% if can_approve_infosec %}
+      {# Action panel #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-base font-semibold text-slate-900">InfoSec Review Actions</h3>
+        </div>
+        <div class="px-6 py-5">
+          <div class="space-y-4">
+            <div>
+              <label for="approval-comments" class="block text-sm font-medium text-slate-700 mb-1">Comments</label>
+              <textarea id="approval-comments" rows="3"
+                        class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                        placeholder="Add review comments (optional)..."></textarea>
+            </div>
+            <div class="flex items-center gap-3 flex-wrap">
+              <button onclick="submitApprovalAction('approve-infosec')" id="btn-approve"
+                      class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 transition-colors">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                Approve
+              </button>
+              <button onclick="submitApprovalAction('request-infosec-changes')" id="btn-changes"
+                      class="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-400 transition-colors">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                </svg>
+                Request Changes
+              </button>
+              <button onclick="submitApprovalAction('reject')" id="btn-reject"
+                      class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 transition-colors">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Reject
+              </button>
+            </div>
+            <div id="approval-feedback" class="hidden rounded-lg px-4 py-3 text-sm font-medium"></div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {# Approval history timeline #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 class="text-base font-semibold text-slate-900">Approval History</h3>
+        </div>
+        <div class="px-6 py-5">
+          {% if approval_records %}
+          <div class="flow-root">
+            <ul role="list" class="-mb-8">
+              {% for record in approval_records %}
+              <li>
+                <div class="relative pb-8">
+                  {% if not forloop.last %}
+                  <span class="absolute left-4 top-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true"></span>
+                  {% endif %}
+                  <div class="relative flex gap-4">
+                    <div class="flex items-center justify-center h-8 w-8 rounded-full ring-8 ring-white
+                      {% if record.decision == 'approved' %}bg-emerald-100
+                      {% elif record.decision == 'changes_requested' %}bg-amber-100
+                      {% elif record.decision == 'rejected' %}bg-red-100
+                      {% endif %}">
+                      {% if record.decision == 'approved' %}
+                      <svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                      {% elif record.decision == 'changes_requested' %}
+                      <svg class="h-4 w-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                      </svg>
+                      {% elif record.decision == 'rejected' %}
+                      <svg class="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      {% endif %}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm text-slate-900">
+                        <span class="font-medium">{{ record.reviewer.get_full_name|default:record.reviewer.username }}</span>
+                        {% if record.decision == 'approved' %}approved
+                        {% elif record.decision == 'changes_requested' %}requested changes on
+                        {% elif record.decision == 'rejected' %}rejected
+                        {% endif %}
+                        this request
+                        <span class="text-slate-500">({{ record.get_stage_display }} review)</span>
+                      </p>
+                      {% if record.comments %}
+                      <p class="mt-1 text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2">{{ record.comments }}</p>
+                      {% endif %}
+                      <p class="mt-0.5 text-xs text-slate-500">{{ record.created_at|date:"M d, Y g:i A" }}</p>
+                    </div>
+                  </div>
+                </div>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% else %}
+          <p class="text-sm text-slate-500 text-center py-4">No approval actions taken yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Allocations tab #}
+    <div id="tab-allocations" class="mt-6 hidden space-y-6">
+      {# Tunnel interfaces #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <h3 class="text-base font-semibold text-slate-900">Tunnel Interface Allocations</h3>
+          {% if tunnel_interfaces %}
+          <span class="text-sm text-slate-500">{{ tunnel_interfaces|length }} tunnel{{ tunnel_interfaces|length|pluralize }}</span>
+          {% endif %}
+        </div>
+        <div class="p-6">
+          {% if tunnel_interfaces %}
+          <div class="overflow-x-auto rounded-lg border border-slate-200">
+            <table class="min-w-full divide-y divide-slate-200">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Tunnel #</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Site</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Local IP</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Remote IP</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Subnet</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Vendor EP</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-200 bg-white">
+                {% for ti in tunnel_interfaces %}
+                <tr class="hover:bg-slate-50">
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono font-medium text-slate-900">tunnel.{{ ti.tunnel_number }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-slate-900">{{ ti.site }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-900">{{ ti.local_ip|default:"--" }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-900">{{ ti.remote_ip|default:"--" }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-900">{{ ti.subnet_cidr|default:"--" }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-600">{{ ti.vendor_endpoint_ip|default:"--" }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="text-center py-8">
+            <svg class="mx-auto h-10 w-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 6.878V6a2.25 2.25 0 012.25-2.25h7.5A2.25 2.25 0 0118 6v.878m-12 0c.235-.083.487-.128.75-.128h10.5c.263 0 .515.045.75.128m-12 0A2.25 2.25 0 004.5 9v.878m13.5-3A2.25 2.25 0 0119.5 9v.878m0 0a2.246 2.246 0 00-.75-.128H5.25c-.263 0-.515.045-.75.128m15 0A2.25 2.25 0 0121 12v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6c0-.98.626-1.813 1.5-2.122" />
+            </svg>
+            <p class="mt-2 text-sm text-slate-500">No tunnel allocations yet.</p>
+            <p class="mt-1 text-xs text-slate-400">Allocations are created after InfoSec approval.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {# NAT mappings #}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-semibold text-slate-900">NAT Pool Mappings</h3>
+            <p class="mt-0.5 text-xs text-slate-500">Inbound &amp; outbound translations carved from each endpoint's NAT pools</p>
+          </div>
+          {% if nat_mappings %}
+          <span class="text-sm text-slate-500">{{ nat_mappings|length }} mapping{{ nat_mappings|length|pluralize }}</span>
+          {% endif %}
+        </div>
+        <div class="p-6">
+          {% if nat_mappings %}
+          <div class="overflow-x-auto rounded-lg border border-slate-200">
+            <table class="min-w-full divide-y divide-slate-200">
+              <thead class="bg-slate-50">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Endpoint</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Direction</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">NAT Address</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Real Address</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Pool</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-200 bg-white">
+                {% for nm in nat_mappings %}
+                <tr class="hover:bg-slate-50">
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-slate-900">{{ nm.site }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm">
+                    {% if nm.direction == 'outbound' %}
+                    <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">Outbound →</span>
+                    {% else %}
+                    <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">← Inbound</span>
+                    {% endif %}
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono font-medium text-slate-900">{{ nm.nat_address }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-900">{{ nm.real_address }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-600">{{ nm.nat_pool.cidr|default:"--" }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="text-center py-8">
+            <svg class="mx-auto h-10 w-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3.75 9h16.5m-16.5 6.75h16.5M3.75 5.25h16.5a1.5 1.5 0 011.5 1.5v10.5a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5V6.75a1.5 1.5 0 011.5-1.5z" />
+            </svg>
+            <p class="mt-2 text-sm text-slate-500">No NAT mappings yet.</p>
+            <p class="mt-1 text-xs text-slate-400">NAT mappings are allocated from endpoint NAT pools after InfoSec approval.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Config tab #}
+    <div id="tab-config" class="mt-6 hidden space-y-6">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-900">PAN-OS Set Commands</h2>
+          <p class="mt-1 text-sm text-slate-500">
+            Generated per endpoint firewall from the request parameters, tunnel allocations and NAT mappings.
+            Review and adjust before pushing — this is a starting point, not a finished change.
+          </p>
+        </div>
+        <a href="{% url 'ui:request-config-download' vpn_request.pk %}"
+           class="inline-flex shrink-0 items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          Download .txt
+        </a>
+      </div>
+
+      {% for cfg in panos_configs %}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-semibold text-slate-900">{{ cfg.site }}</h3>
+            <p class="mt-0.5 text-xs text-slate-500">
+              {% if cfg.site.management_type == 'centralized' %}
+                {{ cfg.site.management_platform|default:"Centralized" }}
+                {% if cfg.site.device_group %}&middot; device group <code class="font-mono">{{ cfg.site.device_group }}</code>{% endif %}
+                {% if cfg.site.template_name %}&middot; template <code class="font-mono">{{ cfg.site.template_name }}</code>{% endif %}
+              {% else %}
+                Standalone firewall
+              {% endif %}
+            </p>
+          </div>
+          {% if cfg.supported %}
+          <button type="button" onclick="copyConfig(this, 'config-text-{{ cfg.site.pk }}')"
+                  class="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+            </svg>
+            Copy
+          </button>
+          {% endif %}
+        </div>
+
+        {% if not cfg.supported %}
+        <div class="px-6 py-8 text-center">
+          <p class="text-sm font-medium text-slate-900">Not generated</p>
+          <p class="mt-1 text-sm text-slate-500">{{ cfg.reason }}</p>
+        </div>
+        {% else %}
+        {% if cfg.notes %}
+        <div class="px-6 py-3 bg-amber-50 border-b border-amber-100">
+          <ul class="list-disc list-inside space-y-0.5">
+            {% for note in cfg.notes %}
+            <li class="text-xs text-amber-800">{{ note }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+        <div class="p-6 space-y-4">
+          {% for section in cfg.sections %}
+          <div>
+            <h4 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">{{ section.title }}</h4>
+            <pre class="rounded-lg bg-slate-900 text-slate-100 text-xs font-mono leading-relaxed px-4 py-3 overflow-x-auto">{% for cmd in section.commands %}{{ cmd }}
+{% endfor %}</pre>
+          </div>
+          {% empty %}
+          <p class="text-sm text-slate-500 text-center py-4">No commands generated yet.</p>
+          {% endfor %}
+        </div>
+        <textarea id="config-text-{{ cfg.site.pk }}" class="hidden" readonly>{{ cfg.text }}</textarea>
+        {% endif %}
+      </div>
+      {% empty %}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 px-6 py-12 text-center">
+        <p class="text-sm font-medium text-slate-900">No endpoint sites selected</p>
+        <p class="mt-1 text-sm text-slate-500">Select our endpoint site(s) in the wizard to generate configuration.</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% csrf_token %}
+<script>
+function copyConfig(btn, textareaId) {
+  var text = document.getElementById(textareaId).value;
+  navigator.clipboard.writeText(text).then(function() {
+    var original = btn.innerHTML;
+    btn.innerHTML = 'Copied!';
+    setTimeout(function() { btn.innerHTML = original; }, 1500);
+  });
+}
+
+function switchTab(tabName) {
+  document.querySelectorAll('[id^="tab-"]').forEach(function(el) {
+    el.classList.add('hidden');
+  });
+  document.getElementById('tab-' + tabName).classList.remove('hidden');
+
+  document.querySelectorAll('[data-tab-btn]').forEach(function(btn) {
+    btn.classList.remove('border-indigo-500', 'text-indigo-600');
+    btn.classList.add('border-transparent', 'text-slate-500', 'hover:border-slate-300', 'hover:text-slate-700');
+  });
+  var activeBtn = document.querySelector('[data-tab-btn="' + tabName + '"]');
+  activeBtn.classList.add('border-indigo-500', 'text-indigo-600');
+  activeBtn.classList.remove('border-transparent', 'text-slate-500', 'hover:border-slate-300', 'hover:text-slate-700');
+}
+
+function submitApprovalAction(action) {
+  var requestId = {{ approval_actions_json|safe }}.requestId;
+  var comments = document.getElementById('approval-comments').value;
+  var csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  var feedback = document.getElementById('approval-feedback');
+
+  // Disable buttons during submission
+  var buttons = document.querySelectorAll('#btn-approve, #btn-changes, #btn-reject');
+  buttons.forEach(function(btn) { btn.disabled = true; btn.classList.add('opacity-50'); });
+
+  fetch('/api/vpn/requests/' + requestId + '/' + action + '/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrfToken,
+    },
+    body: JSON.stringify({ comments: comments }),
+  })
+  .then(function(response) { return response.json().then(function(data) { return { ok: response.ok, data: data }; }); })
+  .then(function(result) {
+    feedback.classList.remove('hidden');
+    if (result.ok) {
+      feedback.className = 'rounded-lg px-4 py-3 text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-200';
+      feedback.textContent = 'Action completed successfully. Reloading...';
+      setTimeout(function() { window.location.reload(); }, 1000);
+    } else {
+      feedback.className = 'rounded-lg px-4 py-3 text-sm font-medium bg-red-50 text-red-800 border border-red-200';
+      feedback.textContent = result.data.error || 'An error occurred.';
+      buttons.forEach(function(btn) { btn.disabled = false; btn.classList.remove('opacity-50'); });
+    }
+  })
+  .catch(function(err) {
+    feedback.classList.remove('hidden');
+    feedback.className = 'rounded-lg px-4 py-3 text-sm font-medium bg-red-50 text-red-800 border border-red-200';
+    feedback.textContent = 'Network error. Please try again.';
+    buttons.forEach(function(btn) { btn.disabled = false; btn.classList.remove('opacity-50'); });
+  });
+}
+</script>
+{% endblock %}

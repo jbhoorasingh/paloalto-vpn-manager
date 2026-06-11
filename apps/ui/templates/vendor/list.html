@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Vendors{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  {# Page header #}
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Vendors</h1>
+      <p class="mt-1 text-sm text-slate-500">
+        Manage third-party vendors that connect via VPN.
+      </p>
+    </div>
+    <div class="mt-4 sm:mt-0">
+      <a href="{% url 'ui:vendor-create' %}"
+         class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-colors">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        Add Vendor
+      </a>
+    </div>
+  </div>
+
+  {# Search / Filter bar #}
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+    <form method="get" class="sm:flex sm:items-center sm:gap-4">
+      <div class="flex-1">
+        <label for="search" class="sr-only">Search vendors</label>
+        <div class="relative">
+          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+            <svg class="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
+          </div>
+          <input type="text"
+                 name="q"
+                 id="search"
+                 value="{{ search_query|default:'' }}"
+                 placeholder="Search by name, domain, or email..."
+                 class="block w-full rounded-lg border-0 py-2.5 pl-10 pr-4 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+        </div>
+      </div>
+      <div class="mt-3 sm:mt-0 flex gap-3">
+        <select name="status"
+                class="rounded-lg border-0 py-2.5 pl-3 pr-8 text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+          <option value="">All Statuses</option>
+          <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+          <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+        </select>
+        <button type="submit"
+                class="inline-flex items-center rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-200 transition-colors">
+          Filter
+        </button>
+      </div>
+    </form>
+  </div>
+
+  {# Vendors table #}
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-slate-200">
+        <thead class="bg-slate-50">
+          <tr>
+            <th scope="col" class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Vendor
+            </th>
+            <th scope="col" class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Domain
+            </th>
+            <th scope="col" class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Support Email
+            </th>
+            <th scope="col" class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Status
+            </th>
+            <th scope="col" class="px-6 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+              VPN Requests
+            </th>
+            <th scope="col" class="relative px-6 py-3.5">
+              <span class="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200 bg-white">
+          {% for vendor in vendors %}
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="whitespace-nowrap px-6 py-4">
+              <div class="flex items-center gap-3">
+                <div class="flex items-center justify-center h-10 w-10 rounded-lg bg-indigo-50 text-indigo-700 font-semibold text-sm">
+                  {{ vendor.name|make_list|first|upper }}
+                </div>
+                <div>
+                  <div class="text-sm font-semibold text-slate-900">{{ vendor.name }}</div>
+                  <div class="text-xs text-slate-500">Added {{ vendor.created_at|date:"M d, Y" }}</div>
+                </div>
+              </div>
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+              {{ vendor.domain|default:"--" }}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+              {{ vendor.support_email|default:"--" }}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4">
+              {% if vendor.status == 'active' %}
+                <span class="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
+                  Active
+                </span>
+              {% else %}
+                <span class="inline-flex items-center rounded-full bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-500/20">
+                  Inactive
+                </span>
+              {% endif %}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+              {{ vendor.vpn_requests.count }}
+            </td>
+            <td class="whitespace-nowrap px-6 py-4 text-right text-sm">
+              <a href="{% url 'ui:vendor-edit' vendor.pk %}"
+                 class="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium transition-colors">
+                Edit
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="px-6 py-12 text-center">
+              <svg class="mx-auto h-12 w-12 text-slate-300" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+              </svg>
+              <p class="mt-4 text-sm font-medium text-slate-900">No vendors found</p>
+              <p class="mt-1 text-sm text-slate-500">Get started by adding your first vendor.</p>
+              <div class="mt-4">
+                <a href="{% url 'ui:vendor-create' %}"
+                   class="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">
+                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Add Vendor
+                </a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Pagination #}
+    {% if is_paginated %}
+    <div class="flex items-center justify-between border-t border-slate-200 bg-white px-6 py-3">
+      <div class="text-sm text-slate-500">
+        Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ paginator.count }} vendors
+      </div>
+      <div class="flex gap-1">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}"
+           class="inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+          Previous
+        </a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}"
+           class="inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50">
+          Next
+        </a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

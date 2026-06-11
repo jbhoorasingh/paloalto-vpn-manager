@@ -1,0 +1,75 @@
+[project]
+name = "vpn-platform"
+version = "0.1.0"
+description = "VPN Management Platform for Palo Alto firewalls managed by Panorama"
+authors = [
+    {name = "Network Engineering"}
+]
+package-mode = false
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "Django>=6.0,<6.1",
+    "psycopg[binary]>=3.2,<4.0",
+    "django-environ>=0.11,<1.0",
+    "gunicorn>=22.0,<23.0",
+    "django-fsm-2>=3.0,<4.0",
+    "django-vite>=3.0,<4.0",
+    "celery[redis]>=5.4,<6.0",
+    "redis>=5.0,<6.0",
+    "django-allauth>=65.0,<66.0",
+    "django-auditlog>=3.0,<4.0",
+    "django-widget-tweaks>=1.5,<2.0",
+    "django-filter>=24.0",
+    "django-extensions>=3.2,<4.0",
+    "whitenoise>=6.7,<7.0",
+    "netaddr>=1.0,<2.0",
+]
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0,<9.0"
+pytest-django = ">=4.8,<5.0"
+pytest-cov = ">=5.0,<6.0"
+factory-boy = ">=3.3,<4.0"
+faker = ">=28.0,<30.0"
+ruff = ">=0.5,<1.0"
+mypy = ">=1.11,<2.0"
+django-stubs = ">=5.0,<6.0"
+pre-commit = ">=3.8,<4.0"
+django-debug-toolbar = ">=4.4,<5.0"
+django-browser-reload = ">=1.13,<2.0"
+ipython = ">=8.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "slow: marks tests as slow",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "A", "DJ"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
+
+[tool.mypy]
+plugins = ["mypy_django_plugin.main"]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.local"

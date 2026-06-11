@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}{{ form_title|default:"Add Vendor" }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+  {# Page header #}
+  <div>
+    <nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+      <a href="{% url 'ui:vendor-list' %}" class="hover:text-slate-700 transition-colors">Vendors</a>
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+      </svg>
+      <span class="text-slate-900 font-medium">{{ form_title|default:"Add Vendor" }}</span>
+    </nav>
+    <h1 class="text-2xl font-bold text-slate-900">{{ form_title|default:"Add New Vendor" }}</h1>
+    <p class="mt-1 text-sm text-slate-500">
+      {% if vendor %}
+        Update the vendor details below.
+      {% else %}
+        Fill in the details for the new third-party vendor.
+      {% endif %}
+    </p>
+  </div>
+
+  {# Vendor form #}
+  <form method="post" class="space-y-6">
+    {% csrf_token %}
+
+    {# Basic Information #}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h2 class="text-base font-semibold text-slate-900">Basic Information</h2>
+      </div>
+      <div class="px-6 py-6 space-y-5">
+        {# Name #}
+        <div>
+          <label for="id_name" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Vendor Name <span class="text-red-500">*</span>
+          </label>
+          <input type="text"
+                 name="name"
+                 id="id_name"
+                 value="{{ vendor.name|default:'' }}"
+                 placeholder="e.g. Acme Corporation"
+                 required
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+        </div>
+
+        {# Domain #}
+        <div>
+          <label for="id_domain" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Domain
+          </label>
+          <input type="text"
+                 name="domain"
+                 id="id_domain"
+                 value="{{ vendor.domain|default:'' }}"
+                 placeholder="e.g. acme.com"
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+          <p class="mt-1.5 text-xs text-slate-500">The vendor's primary domain name.</p>
+        </div>
+      </div>
+    </div>
+
+    {# Support Contact #}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h2 class="text-base font-semibold text-slate-900">Support Contact</h2>
+      </div>
+      <div class="px-6 py-6 space-y-5">
+        {# Support Email #}
+        <div>
+          <label for="id_support_email" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Support Email
+          </label>
+          <input type="email"
+                 name="support_email"
+                 id="id_support_email"
+                 value="{{ vendor.support_email|default:'' }}"
+                 placeholder="support@acme.com"
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+        </div>
+
+        {# Support Phone #}
+        <div>
+          <label for="id_support_phone" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Support Phone
+          </label>
+          <input type="tel"
+                 name="support_phone"
+                 id="id_support_phone"
+                 value="{{ vendor.support_phone|default:'' }}"
+                 placeholder="+1 (555) 123-4567"
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+        </div>
+      </div>
+    </div>
+
+    {# Actions #}
+    <div class="flex items-center justify-end gap-3 pt-2">
+      <a href="{% url 'ui:vendor-list' %}"
+         class="rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
+        Cancel
+      </a>
+      <button type="submit"
+              class="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-colors">
+        {% if vendor %}Update Vendor{% else %}Create Vendor{% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

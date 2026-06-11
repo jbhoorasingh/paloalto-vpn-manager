@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block title %}{{ form_title|default:"Add Endpoint" }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+  {# Page header #}
+  <div>
+    <nav class="flex items-center gap-2 text-sm text-slate-500 mb-4">
+      <a href="{% url 'ui:endpoint-list' %}" class="hover:text-slate-700 transition-colors">Endpoints</a>
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+      </svg>
+      <span class="text-slate-900 font-medium">{{ form_title|default:"Add Endpoint" }}</span>
+    </nav>
+    <h1 class="text-2xl font-bold text-slate-900">{{ form_title|default:"Add New Endpoint" }}</h1>
+    <p class="mt-1 text-sm text-slate-500">
+      {% if endpoint %}
+        Update the endpoint details below.
+      {% else %}
+        Fill in the details for the new site endpoint.
+      {% endif %}
+    </p>
+  </div>
+
+  {# Endpoint form #}
+  <form method="post" class="space-y-6">
+    {% csrf_token %}
+
+    {# Basic Information #}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h2 class="text-base font-semibold text-slate-900">Basic Information</h2>
+      </div>
+      <div class="px-6 py-6 space-y-5">
+        {# Name #}
+        <div>
+          <label for="id_name" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Name <span class="text-red-500">*</span>
+          </label>
+          <input type="text"
+                 name="name"
+                 id="id_name"
+                 value="{{ endpoint.name|default:'' }}"
+                 placeholder="e.g. US East Production"
+                 required
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+        </div>
+
+        {# Code #}
+        <div>
+          <label for="id_code" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Code <span class="text-red-500">*</span>
+          </label>
+          <input type="text"
+                 name="code"
+                 id="id_code"
+                 value="{{ endpoint.code|default:'' }}"
+                 placeholder="e.g. us-east-1"
+                 required
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+          <p class="mt-1.5 text-xs text-slate-500">Short unique identifier for this endpoint.</p>
+        </div>
+
+        {# Location #}
+        <div>
+          <label for="id_location" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Location
+          </label>
+          <input type="text"
+                 name="location"
+                 id="id_location"
+                 value="{{ endpoint.location|default:'' }}"
+                 placeholder="e.g. Ashburn, VA"
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+        </div>
+
+        {# Datacenter #}
+        <div>
+          <label for="id_datacenter" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Datacenter
+          </label>
+          <input type="text"
+                 name="datacenter"
+                 id="id_datacenter"
+                 value="{{ endpoint.datacenter|default:'' }}"
+                 placeholder="e.g. Equinix DC6"
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+          <p class="mt-1.5 text-xs text-slate-500">The datacenter facility where this endpoint is hosted.</p>
+        </div>
+      </div>
+    </div>
+
+    {# Network Details #}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h2 class="text-base font-semibold text-slate-900">Network Details</h2>
+      </div>
+      <div class="px-6 py-6 space-y-5">
+        {# Public IP #}
+        <div>
+          <label for="id_public_ip" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Public IP
+          </label>
+          <input type="text"
+                 name="public_ip"
+                 id="id_public_ip"
+                 value="{{ endpoint.public_ip|default:'' }}"
+                 placeholder="e.g. 203.0.113.10"
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+          <p class="mt-1.5 text-xs text-slate-500">The public-facing IP address for this endpoint.</p>
+        </div>
+
+        {# BGP ASN #}
+        <div>
+          <label for="id_bgp_asn" class="block text-sm font-medium text-slate-700 mb-1.5">
+            BGP ASN
+          </label>
+          <input type="number"
+                 name="bgp_asn"
+                 id="id_bgp_asn"
+                 value="{{ endpoint.bgp_asn|default:'' }}"
+                 placeholder="e.g. 65001"
+                 min="0"
+                 class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+          <p class="mt-1.5 text-xs text-slate-500">BGP Autonomous System Number for this endpoint.</p>
+        </div>
+
+        {# Is Active #}
+        <div class="flex items-center gap-3">
+          <input type="checkbox"
+                 name="is_active"
+                 id="id_is_active"
+                 {% if endpoint.is_active or not endpoint %}checked{% endif %}
+                 class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600">
+          <label for="id_is_active" class="text-sm font-medium text-slate-700">
+            Active
+          </label>
+          <span class="text-xs text-slate-500">Mark this endpoint as active and available for VPN connections.</span>
+        </div>
+      </div>
+    </div>
+
+    {# Device & Management #}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h2 class="text-base font-semibold text-slate-900">Device & Management</h2>
+      </div>
+      <div class="px-6 py-6 space-y-5">
+        {# Device Brand #}
+        <div>
+          <label for="id_device_brand" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Device Brand
+          </label>
+          <select name="device_brand"
+                  id="id_device_brand"
+                  class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+            <option value="">-- Select Brand --</option>
+            {% for value, label in device_brands %}
+            <option value="{{ value }}" {% if endpoint.device_brand == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# Management Type #}
+        <div>
+          <label for="id_management_type" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Management Type
+          </label>
+          <select name="management_type"
+                  id="id_management_type"
+                  onchange="toggleManagementFields()"
+                  class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+            <option value="">-- Select --</option>
+            {% for value, label in management_types %}
+            <option value="{{ value }}" {% if endpoint.management_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {# Centralized management fields #}
+        <div id="centralized-fields" class="space-y-5" style="{% if not endpoint.management_type or endpoint.management_type != 'centralized' %}display:none{% endif %}">
+          {# Management Platform #}
+          <div>
+            <label for="id_management_platform" class="block text-sm font-medium text-slate-700 mb-1.5">
+              Management Platform
+            </label>
+            <input type="text"
+                   name="management_platform"
+                   id="id_management_platform"
+                   value="{{ endpoint.management_platform|default:'' }}"
+                   placeholder="e.g. Panorama"
+                   class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+            <p class="mt-1.5 text-xs text-slate-500">Central management platform name (e.g. Panorama, FortiManager).</p>
+          </div>
+
+          {# Device Group #}
+          <div>
+            <label for="id_device_group" class="block text-sm font-medium text-slate-700 mb-1.5">
+              Device Group
+            </label>
+            <input type="text"
+                   name="device_group"
+                   id="id_device_group"
+                   value="{{ endpoint.device_group|default:'' }}"
+                   placeholder="e.g. DG-Internet-Edge"
+                   class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+            <p class="mt-1.5 text-xs text-slate-500">Device group within the management platform.</p>
+          </div>
+
+          {# Template #}
+          <div>
+            <label for="id_template_name" class="block text-sm font-medium text-slate-700 mb-1.5">
+              Template / Template Stack
+            </label>
+            <input type="text"
+                   name="template_name"
+                   id="id_template_name"
+                   value="{{ endpoint.template_name|default:'' }}"
+                   placeholder="e.g. TS-Internet-Edge"
+                   class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+            <p class="mt-1.5 text-xs text-slate-500">Template or template stack for configuration push.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+    function toggleManagementFields() {
+      var mgmtType = document.getElementById('id_management_type').value;
+      var fields = document.getElementById('centralized-fields');
+      fields.style.display = mgmtType === 'centralized' ? '' : 'none';
+    }
+    </script>
+
+    {# Tunnel Interface Configuration #}
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <h2 class="text-base font-semibold text-slate-900">Tunnel Interface Configuration</h2>
+      </div>
+      <div class="px-6 py-6 space-y-5">
+        {# Tunnel Interface Range #}
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1.5">Tunnel Interface Range</label>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label for="id_tunnel_interface_start" class="block text-xs text-slate-500 mb-1">Start</label>
+              <input type="number"
+                     name="tunnel_interface_start"
+                     id="id_tunnel_interface_start"
+                     value="{{ endpoint.tunnel_interface_start|default:'' }}"
+                     placeholder="e.g. 100"
+                     min="0"
+                     class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+            </div>
+            <div>
+              <label for="id_tunnel_interface_end" class="block text-xs text-slate-500 mb-1">End</label>
+              <input type="number"
+                     name="tunnel_interface_end"
+                     id="id_tunnel_interface_end"
+                     value="{{ endpoint.tunnel_interface_end|default:'' }}"
+                     placeholder="e.g. 199"
+                     min="0"
+                     class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm">
+            </div>
+          </div>
+          <p class="mt-1.5 text-xs text-slate-500">
+            Range of tunnel interface numbers available for VPN allocation on this site.
+          </p>
+        </div>
+
+        {# Tunnel Address Pools #}
+        <div>
+          <label for="id_tunnel_address_pools" class="block text-sm font-medium text-slate-700 mb-1.5">
+            Tunnel Address Pools
+          </label>
+          <textarea name="tunnel_address_pools"
+                    id="id_tunnel_address_pools"
+                    rows="4"
+                    placeholder="10.255.0.0/24&#10;10.255.1.0/24"
+                    class="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-sm font-mono">{{ tunnel_pools|default:'' }}</textarea>
+          <p class="mt-1.5 text-xs text-slate-500">
+            Parent CIDRs from which /30 tunnel subnets are carved. Enter one CIDR per line.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {# Actions #}
+    <div class="flex items-center justify-end gap-3 pt-2">
+      <a href="{% url 'ui:endpoint-list' %}"
+         class="rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors">
+        Cancel
+      </a>
+      <button type="submit"
+              class="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-colors">
+        {% if endpoint %}Update Endpoint{% else %}Create Endpoint{% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,7 @@
+@import "tailwindcss";
+@source "../../apps/ui/templates";
+
+/* Rotate chevron when <details> is open */
+details[open] > summary .details-open-rotate {
+  transform: rotate(90deg);
+}

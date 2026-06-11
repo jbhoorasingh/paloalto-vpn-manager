@@ -87,7 +87,7 @@ class TrafficFlowFactory(factory.django.DjangoModelFactory):
 
     vpn_request = factory.SubFactory(VpnRequestFactory)
     source_cidr = "10.0.0.0/24"
-    destination_cidr = "192.168.1.0/24"
+    destination_cidr = "192.168.1.10/32"
     direction = factory.LazyAttribute(
         lambda o: "inbound" if o.vpn_request.directionality == "vendor_initiates" else "outbound"
     )

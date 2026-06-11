@@ -41,7 +41,25 @@ def approve_infosec(vpn_request, reviewer, comments=""):
             "Tunnel allocation failed for %s", vpn_request.reference_number
         )
 
-    # Allocate inbound/outbound NAT mappings from the endpoint NAT pools
+    return vpn_request
+
+
+def approve_network(vpn_request, reviewer, comments=""):
+    """Approve a request at the Network stage (infosec_approved → network_approved)."""
+    if not can_proceed(vpn_request.approve_network):
+        raise ValidationError("Cannot approve this request from its current status.")
+    vpn_request.approve_network()
+    vpn_request.save()
+    ApprovalRecord.objects.create(
+        vpn_request=vpn_request,
+        reviewer=reviewer,
+        stage=ApprovalRecord.Stage.NETWORK,
+        decision=ApprovalRecord.Decision.APPROVED,
+        comments=comments,
+    )
+
+    # Network approval is the point of no return for addressing — assign the
+    # NAT IPs (inbound/outbound mappings) from the endpoint NAT pools now.
     from apps.vpn.services.nat import allocate_nat_mappings
 
     try:
@@ -51,6 +69,22 @@ def approve_infosec(vpn_request, reviewer, comments=""):
             "NAT allocation failed for %s", vpn_request.reference_number
         )
 
+    return vpn_request
+
+
+def request_network_changes(vpn_request, reviewer, comments=""):
+    """Request changes at the Network stage (infosec_approved → network_changes_requested)."""
+    if not can_proceed(vpn_request.request_network_changes):
+        raise ValidationError("Cannot request changes from this request's current status.")
+    vpn_request.request_network_changes()
+    vpn_request.save()
+    ApprovalRecord.objects.create(
+        vpn_request=vpn_request,
+        reviewer=reviewer,
+        stage=ApprovalRecord.Stage.NETWORK,
+        decision=ApprovalRecord.Decision.CHANGES_REQUESTED,
+        comments=comments,
+    )
     return vpn_request
 
 

@@ -9,7 +9,7 @@ from apps.vpn.services.nat import (
     allocate_nat_mappings,
     compute_nat_specs,
 )
-from apps.vpn.services.workflow import approve_infosec, submit_request
+from apps.vpn.services.workflow import approve_infosec, approve_network, submit_request
 
 from .factories import ApplicationFactory, TrafficFlowFactory, VpnRequestFactory
 
@@ -126,11 +126,27 @@ class TestComputeNatSpecs:
     def test_vendor_initiates_inbound_only(self):
         site = SiteFactory()
         req = VpnRequestFactory(directionality="vendor_initiates", our_endpoint_1_site=site)
-        TrafficFlowFactory(vpn_request=req, destination_cidr="10.108.100.0/24")
+        TrafficFlowFactory(vpn_request=req, destination_cidr="10.108.100.5/32")
         specs = compute_nat_specs(req)
         assert len(specs) == 1
         assert specs[0]["direction"] == "inbound"
-        assert specs[0]["prefixlen"] == 24
+        assert specs[0]["prefixlen"] == 32
+
+    def test_public_destination_skipped(self):
+        # Globally-unique destinations are reachable as-is — no NAT mapping
+        site = SiteFactory()
+        req = VpnRequestFactory(directionality="we_initiate", our_endpoint_1_site=site)
+        TrafficFlowFactory(vpn_request=req, destination_cidr="198.51.100.0/24")
+        assert compute_nat_specs(req) == []
+
+    def test_mixed_public_and_private_destinations(self):
+        site = SiteFactory()
+        req = VpnRequestFactory(directionality="we_initiate", our_endpoint_1_site=site)
+        TrafficFlowFactory(vpn_request=req, destination_cidr="198.51.100.10/32")
+        private = TrafficFlowFactory(vpn_request=req, destination_cidr="172.16.5.10/32")
+        specs = compute_nat_specs(req)
+        assert len(specs) == 1
+        assert specs[0]["flow"] == private
 
     def test_both_directions(self):
         # A "both" request carries flows of each direction; one spec per flow
@@ -264,11 +280,10 @@ class TestAllocateNatMappings:
         allocate_nat_mappings(req)  # no-op
         assert req.nat_mappings.count() == 1
 
-    def test_full_workflow_infosec_creates_nat_mappings(self):
-        """Submit → InfoSec approve → NAT mappings created from endpoint pools."""
+    def test_full_workflow_network_approval_assigns_nat(self):
+        """Submit → InfoSec approve (no NAT) → Network approve → NAT IPs assigned."""
         site = SiteFactory()
         NatPoolFactory(site=site, direction="outbound", cidr="10.111.96.0/24")
-        reviewer = UserFactory(roles=["infosec_approver"])
 
         req = _make_submittable_request(
             directionality="we_initiate",
@@ -277,16 +292,20 @@ class TestAllocateNatMappings:
             our_endpoint_1_site=site,
         )
         submit_request(req)
-        approve_infosec(req, reviewer, comments="ok")
+        approve_infosec(req, UserFactory(roles=["infosec"]), comments="ok")
 
         req = type(req).objects.get(pk=req.pk)  # re-fetch (FSM protected)
         assert req.status == "infosec_approved"
+        assert req.nat_mappings.count() == 0  # NAT waits for Network approval
+
+        approve_network(req, UserFactory(roles=["network"]), comments="ok")
+        req = type(req).objects.get(pk=req.pk)
+        assert req.status == "network_approved"
         assert req.nat_mappings.count() >= 1
 
     def test_missing_pool_does_not_break_workflow(self):
-        """No NAT pool configured: approval still succeeds, no mappings created."""
+        """No NAT pool configured: network approval still succeeds, no mappings created."""
         site = SiteFactory()  # no NAT pools
-        reviewer = UserFactory(roles=["infosec_approver"])
 
         req = _make_submittable_request(
             directionality="we_initiate",
@@ -295,8 +314,10 @@ class TestAllocateNatMappings:
             our_endpoint_1_site=site,
         )
         submit_request(req)
-        approve_infosec(req, reviewer)
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        req = type(req).objects.get(pk=req.pk)
+        approve_network(req, UserFactory(roles=["network"]))
 
         req = type(req).objects.get(pk=req.pk)
-        assert req.status == "infosec_approved"
+        assert req.status == "network_approved"
         assert req.nat_mappings.count() == 0

@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from apps.core.models import NatDirection, NatPool
+from apps.vpn.models.flow import is_rfc1918
 from apps.vpn.models.nat import NatMapping
 
 logger = logging.getLogger(__name__)
@@ -100,11 +101,13 @@ def compute_nat_specs(vpn_request):
     One mapping per (endpoint site × traffic flow × flow direction). Each
     flow's own direction decides which NAT pool (inbound vs outbound) it draws
     from; legacy flows without a direction fall back to the request-level
-    directionality. The NAT block matches the flow's destination prefix length
-    (a /32 host gets a /32 mapping, a /24 network gets a /24 sub-range), per
-    the framework's "own sub-range or /32 host NAT mapping" rule.
-    ``real_address`` is the flow's destination — the real vendor host for
-    outbound, the real internal service for inbound.
+    directionality.
+
+    Only private (RFC-1918) destinations are NAT'd — validation forces those
+    to /32 hosts, giving one-to-one mappings. Globally-unique (public)
+    destinations are reachable as-is and get no mapping. ``real_address`` is
+    the flow's destination — the real vendor host for outbound, the real
+    internal service for inbound.
 
     Returns list of dicts: {site, direction, real_address, prefixlen, flow}.
     """
@@ -116,6 +119,9 @@ def compute_nat_specs(vpn_request):
         for flow in flows:
             real = flow.destination_cidr
             if not real:
+                continue
+            # Globally-unique destination — no boundary NAT required.
+            if not is_rfc1918(real):
                 continue
             try:
                 prefixlen = netaddr.IPNetwork(real).prefixlen

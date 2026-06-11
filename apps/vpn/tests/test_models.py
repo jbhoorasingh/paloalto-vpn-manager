@@ -93,13 +93,31 @@ class TestTrafficFlow:
     def test_create_flow(self):
         flow = TrafficFlowFactory()
         assert flow.source_cidr == "10.0.0.0/24"
-        assert flow.destination_cidr == "192.168.1.0/24"
+        assert flow.destination_cidr == "192.168.1.10/32"
         assert flow.protocol == "tcp"
+
+    def test_private_destination_must_be_host(self):
+        from django.core.exceptions import ValidationError
+        flow = TrafficFlowFactory.build(
+            vpn_request=TrafficFlowFactory().vpn_request,
+            destination_cidr="10.20.30.0/24",
+        )
+        with pytest.raises(ValidationError, match="RFC-1918"):
+            flow.full_clean()
+
+    def test_private_host_destination_ok(self):
+        flow = TrafficFlowFactory(destination_cidr="10.20.30.40/32")
+        flow.full_clean()  # should not raise
+
+    def test_public_destination_range_ok(self):
+        # Globally-unique destinations are not NAT'd — any prefix is fine
+        flow = TrafficFlowFactory(destination_cidr="198.51.100.0/24")
+        flow.full_clean()  # should not raise
 
     def test_flow_str(self):
         flow = TrafficFlowFactory()
         assert "10.0.0.0/24" in str(flow)
-        assert "192.168.1.0/24" in str(flow)
+        assert "192.168.1.10/32" in str(flow)
 
     def test_valid_cidr(self):
         validate_cidr("10.0.0.0/24")

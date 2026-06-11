@@ -497,8 +497,8 @@ def generate_site_config(vpn_request, site):
         shared_sections.append(nat_section)
     else:
         notes.append(
-            "No NAT mappings allocated for this site yet — NAT rules will appear "
-            "after InfoSec approval."
+            "No NAT mappings allocated for this site yet — NAT IPs are assigned "
+            "at Network approval."
         )
 
     if flows:
@@ -541,6 +541,24 @@ def generate_panos_config(vpn_request):
         if site and site.pk not in seen:
             seen.add(site.pk)
             configs.append(generate_site_config(vpn_request, site))
+
+    # Object names ({ref}-gw1, {ref}-vpn1, …) restart per site. If both sites
+    # push into the same Panorama template, the second paste would silently
+    # overwrite the first — warn loudly.
+    templates = [
+        cfg["site"].template_name
+        for cfg in configs
+        if cfg["supported"] and _is_panorama(cfg["site"]) and cfg["site"].template_name
+    ]
+    if len(templates) > 1 and len(set(templates)) < len(templates):
+        for cfg in configs:
+            if cfg["supported"]:
+                cfg["notes"].insert(0, (
+                    "Both endpoint sites share Panorama template "
+                    f"'{templates[0]}' — gateway/tunnel/peer/route object names "
+                    "collide between the sites. Deploy only one site's commands "
+                    "per template, or rename objects before pushing."
+                ))
     return configs
 
 

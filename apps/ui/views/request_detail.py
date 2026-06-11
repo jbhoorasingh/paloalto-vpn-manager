@@ -323,6 +323,10 @@ def request_detail_view(request, pk):
         request.user.is_infosec_approver
         and vpn_request.status == "submitted"
     )
+    can_approve_network = (
+        request.user.is_network_approver
+        and vpn_request.status == "infosec_approved"
+    )
 
     topology_props = {
         "vendorEndpointsCount": vpn_request.vendor_endpoints_count,
@@ -361,6 +365,7 @@ def request_detail_view(request, pk):
         "topology_json": json.dumps(topology_props),
         "approval_records": approval_records,
         "can_approve_infosec": can_approve_infosec,
+        "can_approve_network": can_approve_network,
         "approval_actions_json": json.dumps({"requestId": vpn_request.pk}),
         "workflow_json": workflow_json,
         "audit_timeline": audit_timeline,

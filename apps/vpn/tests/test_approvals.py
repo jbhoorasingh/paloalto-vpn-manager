@@ -8,8 +8,10 @@ from apps.core.tests.factories import UserFactory
 from apps.vpn.models import ApprovalRecord
 from apps.vpn.services.workflow import (
     approve_infosec,
+    approve_network,
     reject_request,
     request_infosec_changes,
+    request_network_changes,
     submit_request,
 )
 
@@ -136,6 +138,54 @@ class TestApprovalWorkflow:
             reject_request(req, reviewer)
 
 
+@pytest.mark.django_db
+class TestNetworkApprovalWorkflow:
+    def _infosec_approved_request(self, **kwargs):
+        req = make_submitted_request(**kwargs)
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        return req
+
+    def test_approve_network_from_infosec_approved(self):
+        reviewer = UserFactory(roles=["network"])
+        req = self._infosec_approved_request()
+        approve_network(req, reviewer)
+        assert req.status == "network_approved"
+        record = ApprovalRecord.objects.get(
+            vpn_request=req, stage=ApprovalRecord.Stage.NETWORK
+        )
+        assert record.decision == ApprovalRecord.Decision.APPROVED
+
+    def test_request_network_changes(self):
+        reviewer = UserFactory(roles=["network"])
+        req = self._infosec_approved_request()
+        request_network_changes(req, reviewer, comments="Routing concerns")
+        assert req.status == "network_changes_requested"
+
+    def test_approve_network_from_wrong_state_raises(self):
+        reviewer = UserFactory(roles=["network"])
+        req = make_submitted_request()  # not yet infosec-approved
+        with pytest.raises(ValidationError):
+            approve_network(req, reviewer)
+
+    def test_network_approval_assigns_nat_ips(self):
+        from apps.core.tests.factories import NatPoolFactory, SiteFactory
+
+        site = SiteFactory()
+        NatPoolFactory(site=site, direction="outbound", cidr="10.111.96.0/24")
+        req = self._infosec_approved_request(
+            directionality="we_initiate",
+            vendor_endpoint_1_ip="1.2.3.4",
+            our_endpoint_1_site=site,
+        )
+        # InfoSec approval no longer assigns NAT
+        assert req.nat_mappings.count() == 0
+        approve_network(req, UserFactory(roles=["network"]))
+        req = type(req).objects.get(pk=req.pk)
+        assert req.status == "network_approved"
+        assert req.nat_mappings.count() == 1
+        assert req.nat_mappings.first().nat_address.startswith("10.111.96.")
+
+
 # ── API Tests ──
 
 
@@ -158,6 +208,17 @@ def requester_user(db):
 @pytest.fixture
 def requester_client(client, requester_user):
     client.force_login(requester_user)
+    return client
+
+
+@pytest.fixture
+def network_user(db):
+    return UserFactory(roles=["network"])
+
+
+@pytest.fixture
+def network_client(client, network_user):
+    client.force_login(network_user)
     return client
 
 
@@ -246,6 +307,47 @@ class TestApprovalAPI:
         assert response.status_code == 200
         data = response.json()
         assert len(data["requests"]) == 2
+
+    def test_approve_network_as_network_user(self, network_client):
+        req = make_submitted_request()
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        response = network_client.post(
+            reverse("vpn-api:approve-network", args=[req.pk]),
+            data=json.dumps({"comments": "Network approved"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "network_approved"
+
+    def test_approve_network_as_infosec_forbidden(self, infosec_client):
+        req = make_submitted_request()
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        response = infosec_client.post(
+            reverse("vpn-api:approve-network", args=[req.pk]),
+            content_type="application/json",
+        )
+        assert response.status_code == 403
+
+    def test_request_network_changes_endpoint(self, network_client):
+        req = make_submitted_request()
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        response = network_client.post(
+            reverse("vpn-api:request-network-changes", args=[req.pk]),
+            data=json.dumps({"comments": "Use other DC"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "network_changes_requested"
+
+    def test_queue_shows_infosec_approved_to_network_approver(self, network_client):
+        req = make_submitted_request()
+        approve_infosec(req, UserFactory(roles=["infosec"]))
+        make_submitted_request()  # submitted — not network's stage
+        response = network_client.get(reverse("vpn-api:approval-queue"))
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["requests"]) == 1
+        assert data["requests"][0]["reference_number"] == req.reference_number
 
     def test_approval_queue_excludes_drafts(self, infosec_client):
         make_submitted_request()

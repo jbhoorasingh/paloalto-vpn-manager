@@ -28,6 +28,8 @@ urlpatterns = [
     path("approvals/queue/", approvals.approval_queue, name="approval-queue"),
     path("requests/<int:pk>/approve-infosec/", approvals.approve_infosec_view, name="approve-infosec"),
     path("requests/<int:pk>/request-infosec-changes/", approvals.request_infosec_changes_view, name="request-infosec-changes"),
+    path("requests/<int:pk>/approve-network/", approvals.approve_network_view, name="approve-network"),
+    path("requests/<int:pk>/request-network-changes/", approvals.request_network_changes_view, name="request-network-changes"),
     path("requests/<int:pk>/reject/", approvals.reject_view, name="reject-request"),
     path("requests/<int:pk>/approvals/", approvals.approval_history, name="approval-history"),
 ]

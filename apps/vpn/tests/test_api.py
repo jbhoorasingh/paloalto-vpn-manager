@@ -296,7 +296,7 @@ class TestFlowsAPI:
             reverse("vpn-api:flow-list-create", args=[req.pk]),
             data=json.dumps({
                 "source_cidr": "10.1.0.0/16",
-                "destination_cidr": "172.16.0.0/24",
+                "destination_cidr": "172.16.0.10/32",
                 "protocol": "tcp",
                 "destination_ports": "443,8443",
                 "description": "HTTPS traffic",
@@ -387,7 +387,7 @@ class TestFlowsAPI:
             reverse("vpn-api:flow-list-create", args=[req.pk]),
             data=json.dumps({
                 "source_cidr": "10.1.0.0/16",
-                "destination_cidr": "172.16.0.0/24",
+                "destination_cidr": "172.16.0.10/32",
                 "direction": "sideways",
                 "protocol": "tcp",
             }),

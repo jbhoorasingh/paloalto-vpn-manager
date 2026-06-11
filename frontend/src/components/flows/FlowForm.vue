@@ -94,6 +94,10 @@
           <p v-if="validationErrors.destination_cidr" class="mt-1 text-xs text-red-600">
             {{ validationErrors.destination_cidr }}
           </p>
+          <p class="mt-1 text-xs text-gray-500">
+            Private (RFC-1918) destinations must be a /32 host — destination NAT is one-to-one.
+            Public destinations aren't NAT'd and may be a range.
+          </p>
         </div>
       </div>
 
@@ -212,6 +216,25 @@ function validateCidr(value) {
   return ''
 }
 
+function isRfc1918(value) {
+  const parts = value.split('/')
+  const octets = parts[0].split('.').map(Number)
+  if (octets[0] === 10) return true
+  if (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) return true
+  if (octets[0] === 192 && octets[1] === 168) return true
+  return false
+}
+
+function validateDestinationCidr(value) {
+  const base = validateCidr(value)
+  if (base) return base
+  const prefix = parseInt(value.split('/')[1])
+  if (isRfc1918(value) && prefix !== 32) {
+    return 'Private (RFC-1918) destinations must be /32 — one flow per host'
+  }
+  return ''
+}
+
 function validatePorts(value) {
   if (!value) return ''
   if (localFlow.protocol === 'icmp' || localFlow.protocol === 'any') return ''
@@ -222,7 +245,7 @@ function validatePorts(value) {
 
 function handleSave() {
   validationErrors.source_cidr = validateCidr(localFlow.source_cidr)
-  validationErrors.destination_cidr = validateCidr(localFlow.destination_cidr)
+  validationErrors.destination_cidr = validateDestinationCidr(localFlow.destination_cidr)
   validationErrors.destination_ports = validatePorts(localFlow.destination_ports)
 
   if (validationErrors.source_cidr || validationErrors.destination_cidr || validationErrors.destination_ports) {

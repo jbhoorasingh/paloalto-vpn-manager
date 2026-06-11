@@ -1,10 +1,28 @@
 import re
 
+import netaddr
 from auditlog.registry import auditlog
 from django.core.exceptions import ValidationError
 from django.db import models
 
 from .application import Application
+
+RFC1918_SPACE = netaddr.IPSet([
+    netaddr.IPNetwork("10.0.0.0/8"),
+    netaddr.IPNetwork("172.16.0.0/12"),
+    netaddr.IPNetwork("192.168.0.0/16"),
+])
+
+
+def is_rfc1918(cidr):
+    """True if the CIDR falls inside private RFC-1918 space."""
+    if not cidr:
+        return False
+    try:
+        network = netaddr.IPNetwork(cidr)
+    except (netaddr.AddrFormatError, ValueError):
+        return False
+    return netaddr.IPSet([network]).issubset(RFC1918_SPACE)
 
 
 class FlowProtocol(models.TextChoices):
@@ -90,6 +108,23 @@ class TrafficFlow(models.Model):
         # the field before it was disabled.
         if self.protocol in (FlowProtocol.ICMP, FlowProtocol.ANY):
             self.destination_ports = ""
+
+        # Boundary-NAT rule: private destinations are NAT'd one-to-one, so
+        # they must be a single host. Globally-unique (public) destinations
+        # are not NAT'd and may be any prefix size.
+        if is_rfc1918(self.destination_cidr):
+            try:
+                prefixlen = netaddr.IPNetwork(self.destination_cidr).prefixlen
+            except (netaddr.AddrFormatError, ValueError):
+                prefixlen = None
+            if prefixlen is not None and prefixlen != 32:
+                raise ValidationError({
+                    "destination_cidr": (
+                        "Private (RFC-1918) destinations must be a /32 host address — "
+                        "destination NAT is one-to-one. Use one flow per host, or a "
+                        "public (globally-unique) range."
+                    )
+                })
 
 
 auditlog.register(

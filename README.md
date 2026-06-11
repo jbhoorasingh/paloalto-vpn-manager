@@ -98,10 +98,13 @@ make prod-logs
 
 The web container runs migrations on boot (and creates an admin account if
 the `DJANGO_SUPERUSER_*` variables are set); the worker waits for a healthy
-web container before starting. The app listens on port **8000** — put a
-TLS-terminating proxy in front and set `DJANGO_CSRF_TRUSTED_ORIGINS` to its
-public origin, or set `DJANGO_SECURE_SSL_REDIRECT=False` for plain-HTTP lab
-deployments.
+web container before starting. The app listens on port **8000**.
+
+**TLS:** the stack ships serving plain HTTP (`DJANGO_SECURE_SSL_REDIRECT=False`)
+so no certificate is needed to deploy. When a TLS-terminating proxy goes in
+front later, flip `DJANGO_SECURE_SSL_REDIRECT=True` and change
+`DJANGO_CSRF_TRUSTED_ORIGINS` to the `https://` origin — that one change also
+re-enables HSTS and secure-only cookies.
 
 | Command           | Description                                  |
 |-------------------|----------------------------------------------|

@@ -160,6 +160,16 @@ class TestDrPeerViews:
         assert response.status_code == 200
         assert peer.name in response.content.decode()
 
+    def test_endpoint_list_shows_peer_membership(self, client_authenticated):
+        from apps.core.tests.factories import DrPeerFactory
+        peer = DrPeerFactory()
+        SiteFactory()  # unpaired — gets the "Pair…" link
+        response = client_authenticated.get(reverse("ui:endpoint-list"))
+        body = response.content.decode()
+        assert f"Primary &middot; {peer.name}" in body
+        assert f"Secondary &middot; {peer.name}" in body
+        assert "Pair…" in body
+
     def test_edit(self, client_authenticated):
         pool = NatPoolFactory(cidr="10.111.96.0/24", description="old")
         response = client_authenticated.post(reverse("ui:nat-pool-edit", args=[pool.pk]), {

@@ -7,7 +7,9 @@ from apps.core.models import Site, TunnelAddressPool
 @login_required
 def endpoint_list_view(request):
     q = request.GET.get("q", "")
-    endpoints = Site.objects.all()
+    endpoints = Site.objects.select_related(
+        "dr_peer_as_primary", "dr_peer_as_secondary"
+    )
     if q:
         endpoints = endpoints.filter(name__icontains=q)
     return render(request, "endpoint/list.html", {

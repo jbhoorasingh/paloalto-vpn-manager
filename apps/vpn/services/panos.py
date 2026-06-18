@@ -21,7 +21,7 @@ import netaddr
 
 from apps.core.models import DrPeer, NatDirection
 
-from .nat import directions_for_flow
+from .nat import directions_for_flow, endpoint_sites
 
 # Site conventions assumed by the generator. Surfaced to the user as notes so
 # an engineer can adjust before pushing.
@@ -214,18 +214,34 @@ def _tunnel_context(vpn_request, ti, idx, base, route_start):
 
 
 def _services_context(flows, base):
-    """Service objects + flow→service-name lookup."""
+    """
+    Service objects + flow→service-name(s) lookup.
+
+    A flow gets one service object per port-based protocol it carries (tcp/udp)
+    when it names ports. Single-protocol flows keep the legacy ``{base}-svcN``
+    name; multi-protocol flows disambiguate as ``{base}-svcN-tcp`` etc.
+    ``service_names[flow.pk]`` is the list of object names for that flow.
+    """
     services = []
     service_names = {}
     for i, flow in enumerate(flows, start=1):
-        if flow.protocol in ("tcp", "udp") and flow.destination_ports:
-            name = f"{base}-svc{i}"
-            services.append({
-                "name": name,
-                "protocol": flow.protocol,
-                "ports": flow.destination_ports.replace(" ", ""),
-            })
-            service_names[flow.pk] = name
+        if not flow.destination_ports:
+            continue
+        protocols = flow.protocol_list
+        # icmp/any widen the security rule to service 'any' — don't emit
+        # service objects no rule will reference.
+        if "icmp" in protocols or "any" in protocols:
+            continue
+        port_protocols = [p for p in protocols if p in ("tcp", "udp")]
+        if not port_protocols:
+            continue
+        ports = flow.destination_ports.replace(" ", "")
+        names = []
+        for proto in port_protocols:
+            name = f"{base}-svc{i}" if len(port_protocols) == 1 else f"{base}-svc{i}-{proto}"
+            services.append({"name": name, "protocol": proto, "ports": ports})
+            names.append(name)
+        service_names[flow.pk] = names
     return services, service_names
 
 
@@ -291,6 +307,8 @@ def _dr_roles(vpn_request):
     requester picked first; without one, falls back to the endpoint order
     (endpoint 1 = primary).
     """
+    if vpn_request.our_endpoints_count != 2:
+        return None
     site1 = vpn_request.our_endpoint_1_site
     site2 = vpn_request.our_endpoint_2_site
     if not site1 or not site2 or site1.pk == site2.pk:
@@ -321,37 +339,70 @@ def _bgp_nat_context(vpn_request, site, mappings, base):
     }
 
 
+def _flow_service(flow, service_names):
+    """
+    The PAN-OS ``service`` value for a flow's security rule.
+
+    tcp/udp flows reference their service object(s) (a ``[ a b ]`` list when
+    more than one). Flows that include ICMP or 'any' fall back to ``any``:
+    custom service objects can't express ICMP, and the rule already permits
+    ``application any``, so this keeps the traffic flowing for an engineer to
+    tighten. Returns (service, widened_for_icmp).
+    """
+    protocols = flow.protocol_list
+    names = service_names.get(flow.pk)
+    # Widened (port restriction lost) when icmp is mixed with a port-based
+    # protocol that named ports — those ports can't be expressed alongside ICMP.
+    widened = "icmp" in protocols and flow.has_port_protocol and bool(flow.destination_ports)
+    if "icmp" in protocols or "any" in protocols or not names:
+        return "any", widened
+    if len(names) == 1:
+        return names[0], False
+    return "[ " + " ".join(names) + " ]", False
+
+
 def _security_rules_context(vpn_request, flows, mappings, service_names, base):
     """
     One security rule per (flow × flow direction).
 
     Each flow's own direction picks the zone pair; flows without one fall back
     to the request-level directionality. Destinations use the published NAT
-    address when a mapping exists for the flow (PAN-OS matches pre-NAT
-    addresses with post-NAT zones), otherwise the flow's real destination.
+    address when a mapping exists for the flow's destination + direction
+    (multiple flows to the same host share one NAT address), otherwise the
+    flow's real destination.
     """
-    mapping_by_flow_dir = {
-        (nm.traffic_flow_id, nm.direction): nm for nm in mappings if nm.traffic_flow_id
-    }
+    # Map each destination+direction to the published NAT address(es). Normally
+    # one address per key (dedup); legacy requests allocated before dedup may
+    # still carry several rows for one destination — emit a rule for each so the
+    # security policy permits every address the NAT policy publishes.
+    addrs_by_dest_dir = {}
+    for nm in mappings:
+        addrs_by_dest_dir.setdefault((nm.real_address, nm.direction), [])
+        if nm.nat_address not in addrs_by_dest_dir[(nm.real_address, nm.direction)]:
+            addrs_by_dest_dir[(nm.real_address, nm.direction)].append(nm.nat_address)
+
     rules = []
     rule_idx = 1
     for flow in flows:
+        service, _ = _flow_service(flow, service_names)
         for direction in directions_for_flow(flow, vpn_request):
-            nm = mapping_by_flow_dir.get((flow.pk, direction))
-            destination = nm.nat_address if nm else flow.destination_cidr
+            destinations = addrs_by_dest_dir.get(
+                (flow.destination_cidr, direction)
+            ) or [flow.destination_cidr]
             if direction == NatDirection.OUTBOUND:
                 from_zone, to_zone = TRUST_ZONE, VPN_ZONE
             else:
                 from_zone, to_zone = VPN_ZONE, TRUST_ZONE
-            rules.append({
-                "name": f"{base}-sec{rule_idx}",
-                "from_zone": from_zone,
-                "to_zone": to_zone,
-                "source": flow.source_cidr or "any",
-                "destination": destination or "any",
-                "service": service_names.get(flow.pk, "any"),
-            })
-            rule_idx += 1
+            for destination in destinations:
+                rules.append({
+                    "name": f"{base}-sec{rule_idx}",
+                    "from_zone": from_zone,
+                    "to_zone": to_zone,
+                    "source": flow.source_cidr or "any",
+                    "destination": destination or "any",
+                    "service": service,
+                })
+                rule_idx += 1
     return rules
 
 
@@ -586,6 +637,14 @@ def generate_site_config(vpn_request, site):
         sections.append(security_section)
         shared_sections.append(security_section)
 
+        if any(_flow_service(f, service_names)[1] for f in flows):
+            notes.append(
+                "A flow combines ICMP with TCP/UDP — its security rule uses "
+                "service 'any' (custom service objects can't express ICMP), so "
+                "the port restriction is relaxed. Tighten it with an "
+                "application-based rule if needed."
+            )
+
     for error in dict.fromkeys(segment_errors):
         notes.insert(0, f"{error} — using the built-in default for that segment.")
 
@@ -617,12 +676,12 @@ def generate_panos_config(vpn_request):
     Returns a list of site config dicts (one per distinct endpoint site):
     {site, supported, reason, sections: [{title, commands}], notes: [str]}.
     """
-    configs = []
-    seen = set()
-    for site in (vpn_request.our_endpoint_1_site, vpn_request.our_endpoint_2_site):
-        if site and site.pk not in seen:
-            seen.add(site.pk)
-            configs.append(generate_site_config(vpn_request, site))
+    # Honor the authoritative our-side endpoint count — a single-side request
+    # never emits a config for a stale Site 2 (mirrors NAT/tunnel allocation).
+    configs = [
+        generate_site_config(vpn_request, site)
+        for site in endpoint_sites(vpn_request)
+    ]
 
     # Object names ({ref}-gw1, {ref}-vpn1, …) restart per site. If both sites
     # push into the same Panorama template, the second paste would silently

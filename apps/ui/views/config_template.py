@@ -21,7 +21,7 @@ DOCUMENT_VARIABLES = [
     ("site", "Endpoint firewall: name, code, public_ip, bgp_asn, device_group, template_name, management_type"),
     ("request", "Request fields: reference_number, title, vendor, directionality, routing_type, ike_*, ipsec_*, vendor_cidrs"),
     ("reference", "Lowercased reference number used in object names"),
-    ("flows", "Traffic flows: source_cidr, destination_cidr, direction, protocol, destination_ports"),
+    ("flows", "Traffic flows: source_cidr, destination_cidr, direction, protocols (list), protocol (joined string), destination_ports"),
     ("nat_mappings", "NAT mappings: site_code, direction, nat_address, real_address"),
     ("notes", "Generator notes/assumptions for this site"),
 ]

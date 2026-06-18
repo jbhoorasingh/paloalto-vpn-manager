@@ -6,6 +6,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from apps.vpn.models import TrafficFlow, VpnRequest
+from apps.vpn.models.flow import parse_protocols
 
 
 def serialize_flow(flow):
@@ -14,12 +15,24 @@ def serialize_flow(flow):
         "source_cidr": flow.source_cidr,
         "destination_cidr": flow.destination_cidr,
         "direction": flow.direction,
-        "protocol": flow.protocol,
+        "protocols": flow.protocol_list,
         "destination_ports": flow.destination_ports,
         "application_id": flow.application_id,
         "description": flow.description,
         "order": flow.order,
     }
+
+
+def _protocols_from(data, default="tcp"):
+    """Read protocols from a request body — accepts a list, CSV, or legacy
+    single ``protocol`` string. Returns a normalized CSV string."""
+    if "protocols" in data:
+        protocols = parse_protocols(data.get("protocols"))
+    elif "protocol" in data:
+        protocols = parse_protocols(data.get("protocol"))
+    else:
+        protocols = parse_protocols(default)
+    return ",".join(protocols)
 
 
 def _default_direction(vpn_request):
@@ -61,7 +74,7 @@ def flow_list_create(request, request_pk):
         source_cidr=data.get("source_cidr", ""),
         destination_cidr=data.get("destination_cidr", ""),
         direction=data.get("direction") or _default_direction(vpn_req),
-        protocol=data.get("protocol", "tcp"),
+        protocols=_protocols_from(data),
         destination_ports=data.get("destination_ports", ""),
         application_id=data.get("application_id") or None,
         description=data.get("description", ""),
@@ -98,10 +111,12 @@ def flow_detail(request, pk):
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    for field in ("source_cidr", "destination_cidr", "direction", "protocol",
+    for field in ("source_cidr", "destination_cidr", "direction",
                   "destination_ports", "description", "order"):
         if field in data:
             setattr(flow, field, data[field])
+    if "protocols" in data or "protocol" in data:
+        flow.protocols = _protocols_from(data)
     if "application_id" in data:
         flow.application_id = data["application_id"] or None
 

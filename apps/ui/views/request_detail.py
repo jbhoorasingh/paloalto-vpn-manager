@@ -157,7 +157,7 @@ def _build_audit_timeline(vpn_request, approval_records):
         "source_cidr": "Source CIDR",
         "destination_cidr": "Destination CIDR",
         "direction": "Direction",
-        "protocol": "Protocol",
+        "protocols": "Protocols",
         "destination_ports": "Destination Ports",
         "description": "Description",
         "application": "Application",
@@ -305,23 +305,44 @@ def _build_nat_packet_walks(vpn_request, tunnel_interfaces, nat_mappings):
 
     DR pairs produce one walk covering both firewalls (same NAT address).
     """
+    from apps.vpn.services.nat import directions_for_flow
+
     tunnels_by_site = {}
     for ti in tunnel_interfaces:
         tunnels_by_site.setdefault(ti.site_id, []).append(ti)
 
+    # One walk per translation (direction × NAT address × destination). Multiple
+    # flows can share a translation, so summarize their protocols/ports/sources.
+    request_flows = list(vpn_request.flows.all())
+
     groups = {}
     for nm in nat_mappings:
-        key = (nm.direction, nm.nat_address, nm.real_address, nm.traffic_flow_id)
+        key = (nm.direction, nm.nat_address, nm.real_address)
         groups.setdefault(key, []).append(nm)
 
     walks = []
-    for (direction, nat_address, real_address, _flow_id), group in groups.items():
-        flow = group[0].traffic_flow
-        source = flow.source_cidr if flow else "any"
-        protocol = flow.protocol.upper() if flow else "ANY"
-        ports = (flow.destination_ports or "any") if flow else "any"
-        if protocol in ("ICMP", "ANY"):
-            ports = ""
+    for (direction, nat_address, real_address), group in groups.items():
+        sharing = [
+            f for f in request_flows
+            if f.destination_cidr == real_address
+            and direction in directions_for_flow(f, vpn_request)
+        ]
+        if not sharing and group[0].traffic_flow:
+            sharing = [group[0].traffic_flow]
+
+        sources = list(dict.fromkeys(f.source_cidr or "any" for f in sharing)) or ["any"]
+        source = ", ".join(sources)
+        protos = []
+        for f in sharing:
+            for p in f.protocol_list:
+                if p not in protos:
+                    protos.append(p)
+        protocol = ", ".join(p.upper() for p in protos) if protos else "ANY"
+        port_specs = list(dict.fromkeys(
+            f.destination_ports for f in sharing
+            if f.has_port_protocol and f.destination_ports
+        ))
+        ports = ", ".join(port_specs)
 
         firewalls = []
         for nm in group:
@@ -377,10 +398,18 @@ def request_detail_view(request, pk):
         VpnRequest.objects.select_related("vendor", "requester"),
         pk=pk,
     )
-    flows = list(vpn_request.flows.values(
-        "id", "source_cidr", "destination_cidr", "direction",
-        "protocol", "destination_ports", "description",
-    ))
+    flows = [
+        {
+            "id": f.pk,
+            "source_cidr": f.source_cidr,
+            "destination_cidr": f.destination_cidr,
+            "direction": f.direction,
+            "protocols": f.protocols_display(),
+            "destination_ports": f.destination_ports,
+            "description": f.description,
+        }
+        for f in vpn_request.flows.all()
+    ]
     applications = list(vpn_request.applications.values_list("name", flat=True))
     approval_records = vpn_request.approval_records.select_related("reviewer").all()
 
@@ -395,6 +424,7 @@ def request_detail_view(request, pk):
 
     topology_props = {
         "vendorEndpointsCount": vpn_request.vendor_endpoints_count,
+        "ourEndpointsCount": vpn_request.our_endpoints_count,
         "topologyType": vpn_request.topology_type,
         "vendorEndpoint1Ip": vpn_request.vendor_endpoint_1_ip or "",
         "vendorEndpoint2Ip": vpn_request.vendor_endpoint_2_ip or "",

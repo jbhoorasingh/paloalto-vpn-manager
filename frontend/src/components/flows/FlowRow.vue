@@ -27,7 +27,7 @@
       </span>
     </td>
     <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-900">
-      {{ flow.protocol?.toUpperCase() }}
+      {{ protocolLabel }}
     </td>
     <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-gray-900">
       {{ flow.destination_ports || 'any' }}
@@ -57,7 +57,9 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
   flow: {
     type: Object,
     required: true,
@@ -69,4 +71,14 @@ defineProps({
 })
 
 defineEmits(['edit', 'delete'])
+
+const protocolLabel = computed(() => {
+  const protos = Array.isArray(props.flow.protocols)
+    ? props.flow.protocols
+    : (props.flow.protocols || props.flow.protocol || '')
+        .toString()
+        .split(',')
+        .filter(Boolean)
+  return protos.map((p) => p.toUpperCase()).join(', ')
+})
 </script>

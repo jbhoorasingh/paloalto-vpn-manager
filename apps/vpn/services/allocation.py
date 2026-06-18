@@ -19,7 +19,9 @@ def compute_tunnel_list(vpn_request):
     Returns list of dicts: [{"site": Site, "vendor_ep_ip": str, "index": int}, ...]
     """
     site1 = vpn_request.our_endpoint_1_site
-    site2 = vpn_request.our_endpoint_2_site
+    # Honor the explicit our-side count — a single-side request ignores a stale
+    # Site 2; only a 2-endpoint (DR pair) request builds tunnels for it.
+    site2 = vpn_request.our_endpoint_2_site if vpn_request.our_endpoints_count == 2 else None
     ep1_ip = vpn_request.vendor_endpoint_1_ip or ""
     ep2_ip = vpn_request.vendor_endpoint_2_ip or ""
     count = vpn_request.vendor_endpoints_count

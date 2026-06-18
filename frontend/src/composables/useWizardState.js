@@ -33,6 +33,7 @@ export function createWizardState(initialData = {}) {
 
     // Step 3: Topology
     vendor_endpoints_count: initialData.vendor_endpoints_count || 1,
+    our_endpoints_count: initialData.our_endpoints_count || 1,
     topology_type: initialData.topology_type || '',
     vendor_endpoint_1_ip: initialData.vendor_endpoint_1_ip || '',
     vendor_endpoint_2_ip: initialData.vendor_endpoint_2_ip || '',

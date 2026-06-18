@@ -284,7 +284,7 @@ class TestNatAndSecurity:
         req, _, _ = _make_request_with_tunnel(site=site)
         flow = TrafficFlowFactory(
             vpn_request=req, source_cidr="10.0.0.0/24",
-            destination_cidr="172.16.5.10/32", protocol="tcp",
+            destination_cidr="172.16.5.10/32", protocols="tcp",
             destination_ports="443,8443",
         )
         NatMapping.objects.create(
@@ -303,6 +303,26 @@ class TestNatAndSecurity:
         assert f"{sec} service {base}-svc1" in commands
         assert f"{sec} action allow" in commands
 
+    def test_legacy_duplicate_mappings_each_get_a_security_rule(self):
+        # Pre-dedup data: two NatMappings share (real_address, direction) with
+        # distinct NAT addresses. Each must get a security rule so the policy
+        # permits every address the NAT policy still publishes.
+        site = SiteFactory(management_type="standalone", template_name="", device_group="")
+        req, _, _ = _make_request_with_tunnel(site=site)
+        flow = TrafficFlowFactory(
+            vpn_request=req, source_cidr="10.0.0.0/24",
+            destination_cidr="172.16.5.10/32", protocols="tcp", destination_ports="443",
+        )
+        for addr in ("10.111.96.0/32", "10.111.96.1/32"):
+            NatMapping.objects.create(
+                vpn_request=req, site=site, direction="outbound",
+                nat_address=addr, real_address="172.16.5.10/32", traffic_flow=flow,
+            )
+        base = req.reference_number.lower()
+        commands = _all_commands(generate_site_config(req, site))
+        assert f"set rulebase security rules {base}-sec1 destination 10.111.96.0/32" in commands
+        assert f"set rulebase security rules {base}-sec2 destination 10.111.96.1/32" in commands
+
     def test_security_rule_zones_follow_flow_direction(self):
         # Flow direction overrides request directionality for zone selection
         site = SiteFactory(management_type="standalone", template_name="", device_group="")
@@ -310,7 +330,7 @@ class TestNatAndSecurity:
         TrafficFlowFactory(
             vpn_request=req, direction="inbound",
             source_cidr="172.16.0.0/24", destination_cidr="10.10.70.100/32",
-            protocol="any", destination_ports="",
+            protocols="any", destination_ports="",
         )
         base = req.reference_number.lower()
         commands = _all_commands(generate_site_config(req, site))
@@ -355,13 +375,43 @@ class TestNatAndSecurity:
         TrafficFlowFactory(
             vpn_request=req, source_cidr="10.0.0.0/24",
             destination_cidr="172.16.5.10/32", destination_ports="",
-            protocol="icmp",
+            protocols="icmp",
         )
         base = req.reference_number.lower()
         commands = _all_commands(generate_site_config(req, site))
         sec = f"set rulebase security rules {base}-sec1"
         assert f"{sec} destination 172.16.5.10/32" in commands
         assert f"{sec} service any" in commands
+
+    def test_multi_protocol_flow_makes_one_service_object_per_protocol(self):
+        site = SiteFactory(management_type="standalone", template_name="", device_group="")
+        req, _, _ = _make_request_with_tunnel(site=site)
+        TrafficFlowFactory(
+            vpn_request=req, source_cidr="10.0.0.0/24",
+            destination_cidr="172.16.5.10/32", protocols="tcp,udp",
+            destination_ports="443",
+        )
+        base = req.reference_number.lower()
+        commands = _all_commands(generate_site_config(req, site))
+        assert f"set service {base}-svc1-tcp protocol tcp port 443" in commands
+        assert f"set service {base}-svc1-udp protocol udp port 443" in commands
+        sec = f"set rulebase security rules {base}-sec1"
+        assert f"{sec} service [ {base}-svc1-tcp {base}-svc1-udp ]" in commands
+
+    def test_icmp_mixed_with_tcp_widens_service_to_any_with_note(self):
+        site = SiteFactory(management_type="standalone", template_name="", device_group="")
+        req, _, _ = _make_request_with_tunnel(site=site)
+        TrafficFlowFactory(
+            vpn_request=req, source_cidr="10.0.0.0/24",
+            destination_cidr="172.16.5.10/32", protocols="tcp,icmp",
+            destination_ports="443",
+        )
+        base = req.reference_number.lower()
+        cfg = generate_site_config(req, site)
+        commands = _all_commands(cfg)
+        sec = f"set rulebase security rules {base}-sec1"
+        assert f"{sec} service any" in commands
+        assert any("ICMP" in note for note in cfg["notes"])
 
 
 @pytest.mark.django_db
@@ -457,6 +507,17 @@ class TestMultiSite:
         )
         configs = generate_panos_config(req)
         assert len(configs) == 1
+
+    def test_count_one_ignores_stale_second_site(self):
+        # A single-side request must not emit a phantom config for a stale Site 2.
+        site1 = SiteFactory()
+        site2 = SiteFactory()
+        req = VpnRequestFactory(
+            our_endpoint_1_site=site1, our_endpoint_2_site=site2,
+            our_endpoints_count=1, vendor_endpoint_1_ip="198.51.100.10",
+        )
+        configs = generate_panos_config(req)
+        assert [c["site"] for c in configs] == [site1]
 
     def test_config_as_text_has_no_comment_lines(self):
         site = SiteFactory(management_type="standalone", template_name="", device_group="")

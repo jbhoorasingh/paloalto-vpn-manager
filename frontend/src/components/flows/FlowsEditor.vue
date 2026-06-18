@@ -53,7 +53,7 @@
             <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Source</th>
             <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Destination</th>
             <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Direction</th>
-            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Protocol</th>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Protocols</th>
             <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Ports</th>
             <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Description</th>
             <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
@@ -140,7 +140,7 @@ function createEmptyFlow() {
     source_cidr: '',
     destination_cidr: '',
     direction: 'outbound',
-    protocol: 'tcp',
+    protocols: ['tcp'],
     destination_ports: '',
     description: '',
   }

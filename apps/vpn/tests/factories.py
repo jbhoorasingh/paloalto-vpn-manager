@@ -55,6 +55,10 @@ class VpnRequestFactory(factory.django.DjangoModelFactory):
     purpose = factory.Faker("sentence")
     directionality = "we_initiate"
     vendor_endpoints_count = 1
+    # Mirror the data migration: a request is a DR pair when a second endpoint
+    # site is provided. Tests that pass our_endpoint_2_site get count=2 for free.
+    our_endpoint_2_site = None
+    our_endpoints_count = factory.LazyAttribute(lambda o: 2 if o.our_endpoint_2_site else 1)
     ike_version = "2"
     auth_method = "psk"
     ike_encryption = "aes-256-cbc"
@@ -91,7 +95,7 @@ class TrafficFlowFactory(factory.django.DjangoModelFactory):
     direction = factory.LazyAttribute(
         lambda o: "inbound" if o.vpn_request.directionality == "vendor_initiates" else "outbound"
     )
-    protocol = "tcp"
+    protocols = "tcp"
     destination_ports = "443"
     description = factory.Faker("sentence")
     order = factory.Sequence(lambda n: n)

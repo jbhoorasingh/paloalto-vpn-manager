@@ -366,7 +366,7 @@
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Source CIDR</th>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Destination CIDR</th>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Direction</th>
-                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Protocol</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Protocols</th>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Ports</th>
                   <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Description</th>
                 </tr>
@@ -385,7 +385,7 @@
                     <span class="text-slate-400">--</span>
                     {% endif %}
                   </td>
-                  <td class="whitespace-nowrap px-4 py-3 text-sm text-slate-900">{{ flow.protocol|upper }}</td>
+                  <td class="whitespace-nowrap px-4 py-3 text-sm text-slate-900">{{ flow.protocols }}</td>
                   <td class="whitespace-nowrap px-4 py-3 text-sm font-mono text-slate-900">{{ flow.destination_ports|default:"any" }}</td>
                   <td class="px-4 py-3 text-sm text-slate-600">{{ flow.description|default:"---" }}</td>
                 </tr>

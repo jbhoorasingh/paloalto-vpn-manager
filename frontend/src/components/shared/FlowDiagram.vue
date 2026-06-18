@@ -264,9 +264,13 @@ const connections = computed(() => {
     labelOffsets.set(key, offset + 1)
     const labelY = midY + offset * 16
 
-    const proto = flow.protocol.toUpperCase()
+    const protos = Array.isArray(flow.protocols)
+      ? flow.protocols
+      : (flow.protocols || flow.protocol || '').toString().split(',').filter(Boolean)
+    const protoLabel = protos.map((p) => p.toUpperCase()).join('/') || 'ANY'
+    const hasPort = protos.some((p) => p === 'tcp' || p === 'udp')
     const ports = flow.destination_ports || 'any'
-    const label = proto === 'ICMP' || proto === 'ANY' ? proto : `${proto}/${ports}`
+    const label = hasPort ? `${protoLabel}/${ports}` : protoLabel
 
     lines.push({
       srcY,

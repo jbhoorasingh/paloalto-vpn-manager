@@ -76,6 +76,35 @@
           </div>
         </div>
 
+        <!-- Our endpoint count -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Our Endpoint Count</label>
+          <div class="mt-2 flex gap-4">
+            <label class="flex cursor-pointer items-center">
+              <input
+                type="radio"
+                :value="1"
+                v-model.number="formData.our_endpoints_count"
+                class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span class="ml-2 text-sm text-gray-700">Single side (1 firewall)</span>
+            </label>
+            <label class="flex cursor-pointer items-center">
+              <input
+                type="radio"
+                :value="2"
+                v-model.number="formData.our_endpoints_count"
+                class="h-4 w-4 border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span class="ml-2 text-sm text-gray-700">Paired (2 endpoints)</span>
+            </label>
+          </div>
+          <p class="mt-1 text-xs text-gray-500">
+            Paired endpoints are a DR pair — they share one NAT address from the shared pool, so a
+            site failure fails over to the same address. Requires a DR peer configured for both sites.
+          </p>
+        </div>
+
         <!-- Our endpoint sites -->
         <div>
           <label class="block text-sm font-medium text-gray-700">Our Endpoints</label>
@@ -97,7 +126,7 @@
                 <span v-if="site1Details.bgp_asn">BGP ASN: <span class="font-mono">{{ site1Details.bgp_asn }}</span></span>
               </div>
             </div>
-            <div>
+            <div v-if="formData.our_endpoints_count === 2">
               <label class="text-xs text-gray-500">Site 2</label>
               <select
                 v-model="formData.our_endpoint_2_site_id"
@@ -122,6 +151,7 @@
         <label class="mb-2 block text-sm font-medium text-gray-700">Topology Preview</label>
         <TopologyDiagram
           :vendor-endpoints-count="formData.vendor_endpoints_count"
+          :our-endpoints-count="formData.our_endpoints_count"
           :topology-type="formData.topology_type"
           :vendor-endpoint1-ip="formData.vendor_endpoint_1_ip"
           :vendor-endpoint2-ip="formData.vendor_endpoint_2_ip"
@@ -134,7 +164,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useWizardState } from '../../composables/useWizardState.js'
 import TopologyDiagram from '../shared/TopologyDiagram.vue'
 
@@ -146,6 +176,17 @@ const props = defineProps({
 })
 
 const { formData, errors } = useWizardState()
+
+// Single-side requests don't have a second endpoint — drop any stale Site 2 so
+// it isn't persisted and later mistaken for a DR pair.
+watch(
+  () => formData.our_endpoints_count,
+  (count) => {
+    if (count !== 2) {
+      formData.our_endpoint_2_site_id = null
+    }
+  }
+)
 
 const site1Details = computed(() => {
   return props.sites.find((s) => s.id === formData.our_endpoint_1_site_id) || null

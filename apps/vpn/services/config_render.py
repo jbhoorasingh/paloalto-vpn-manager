@@ -58,7 +58,9 @@ def build_template_context(vpn_request, site_config):
             "source_cidr": f.source_cidr,
             "destination_cidr": f.destination_cidr,
             "direction": f.direction,
-            "protocol": f.protocol,
+            "protocols": f.protocol_list,
+            # joined display string for templates (e.g. "tcp, udp")
+            "protocol": ", ".join(f.protocol_list),
             "destination_ports": f.destination_ports,
             "description": f.description,
         }

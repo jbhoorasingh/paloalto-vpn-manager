@@ -1,0 +1,230 @@
+{% load l10n %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VPN Handoff — {{ reference_number }}</title>
+  <style>
+    :root { --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --accent:#4338ca; --accent-bg:#eef2ff; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--ink); background: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13px; line-height: 1.5;
+    }
+    .page { max-width: 820px; margin: 0 auto; padding: 24px; background: #fff; }
+    .toolbar {
+      position: sticky; top: 0; display: flex; align-items: center; gap: 12px;
+      background: #fff; border-bottom: 1px solid var(--line); padding: 12px 24px; margin: -24px -24px 24px;
+    }
+    .toolbar .spacer { flex: 1; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+      border: 1px solid var(--accent); background: var(--accent); color: #fff;
+      padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
+    }
+    .btn.secondary { background: #fff; color: var(--ink); border-color: var(--line); }
+    a { color: var(--accent); }
+    h1 { font-size: 20px; margin: 0 0 2px; }
+    h2 {
+      font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--accent);
+      border-bottom: 2px solid var(--accent-bg); padding-bottom: 4px; margin: 26px 0 10px;
+    }
+    .cover { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .cover .meta { text-align: right; color: var(--muted); font-size: 12px; }
+    .cover .meta strong { color: var(--ink); }
+    .note { background: var(--accent-bg); border-radius: 6px; padding: 8px 12px; color: var(--accent); font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+    td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    dl { margin: 0; }
+    dl .row { display: flex; padding: 3px 0; border-bottom: 1px solid var(--line); }
+    dl dt { width: 130px; flex: 0 0 130px; color: var(--muted); }
+    dl dd { margin: 0; }
+    .pill { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
+    .pill.in { background: #ecfdf5; color: #047857; }
+    .pill.out { background: #eff6ff; color: #1d4ed8; }
+    svg { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+    .empty { color: var(--muted); font-style: italic; }
+    @page { size: Letter; margin: 14mm; }
+    @media print {
+      body { background: #fff; font-size: 11px; }
+      .page { max-width: none; padding: 0; }
+      .no-print { display: none !important; }
+      h2 { margin-top: 18px; }
+      table, svg, .section { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar no-print">
+    <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+    <a class="btn secondary" href="{% url 'ui:request-detail' vpn_request.pk %}">← Back to request</a>
+    <span class="spacer"></span>
+    <span class="note">Pre-shared key is exchanged out-of-band — it is not included in this document.</span>
+  </div>
+
+  <div class="page">
+    <!-- Cover -->
+    <div class="cover">
+      <div>
+        <h1>VPN Configuration Handoff</h1>
+        <div style="color:var(--muted)">{{ title|default:"Site-to-site IPsec VPN" }}</div>
+      </div>
+      <div class="meta">
+        <div><strong>Vendor:</strong> {{ vendor_name }}</div>
+        <div><strong>Reference:</strong> {{ reference_number }}</div>
+        <div><strong>Generated:</strong> {{ generated_at|date:"M j, Y" }}</div>
+        <div><strong>Routing:</strong> {{ routing_label }}</div>
+      </div>
+    </div>
+
+    <!-- Tunnel endpoints & peering -->
+    <h2>Tunnel Endpoints &amp; Peering</h2>
+    {% if tunnel_rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>Tunnel</th>
+          <th>Our Public IP</th>
+          <th>Vendor Public IP</th>
+          <th>Our Tunnel IP</th>
+          <th>Vendor Tunnel IP</th>
+          <th>Subnet</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tunnel_rows %}
+        <tr>
+          <td class="mono">{{ t.tunnel }} <span style="color:var(--muted)">@ {{ t.site_code }}</span></td>
+          <td class="mono">{{ t.our_public_ip }}</td>
+          <td class="mono">{{ t.vendor_public_ip }}</td>
+          <td class="mono">{{ t.our_inside_ip }}</td>
+          <td class="mono">{{ t.vendor_inside_ip }}</td>
+          <td class="mono">{{ t.subnet }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No tunnel interfaces allocated.</p>
+    {% endif %}
+
+    <!-- IKE / IPsec -->
+    <h2>IKE / IPsec Parameters <span style="font-weight:400;text-transform:none;color:var(--muted)">(must match on both ends)</span></h2>
+    <div class="grid2">
+      <dl>
+        <div class="row"><dt>Phase 1 (IKE)</dt><dd><strong>{{ crypto.ike_version }}</strong></dd></div>
+        <div class="row"><dt>Authentication</dt><dd>{{ crypto.auth_method }}</dd></div>
+        <div class="row"><dt>Encryption</dt><dd class="mono">{{ crypto.ike_encryption }}</dd></div>
+        <div class="row"><dt>Integrity</dt><dd class="mono">{{ crypto.ike_integrity }}</dd></div>
+        <div class="row"><dt>DH Group</dt><dd class="mono">{{ crypto.ike_dh_group }}</dd></div>
+        <div class="row"><dt>Lifetime</dt><dd>{% if crypto.ike_lifetime %}{{ crypto.ike_lifetime }}s{% else %}—{% endif %}</dd></div>
+        <div class="row"><dt>DPD</dt><dd>{{ crypto.dpd_enabled|yesno:"Enabled,Disabled" }}</dd></div>
+      </dl>
+      <dl>
+        <div class="row"><dt>Phase 2 (IPsec)</dt><dd><strong>{{ crypto.tunnel_mode }} mode</strong></dd></div>
+        <div class="row"><dt>Encryption</dt><dd class="mono">{{ crypto.ipsec_encryption }}</dd></div>
+        <div class="row"><dt>Integrity</dt><dd class="mono">{{ crypto.ipsec_integrity }}</dd></div>
+        <div class="row"><dt>PFS Group</dt><dd class="mono">{{ crypto.ipsec_pfs_group }}</dd></div>
+        <div class="row"><dt>Lifetime</dt><dd>{% if crypto.ipsec_lifetime %}{{ crypto.ipsec_lifetime }}s{% else %}—{% endif %}</dd></div>
+      </dl>
+    </div>
+
+    <!-- Routing -->
+    <h2>Routing — {{ routing_label }}</h2>
+    {% if is_bgp %}
+    <table>
+      <thead>
+        <tr><th>Tunnel</th><th>Our ASN</th><th>Our Peer IP</th><th>Vendor ASN</th><th>Vendor Peer IP</th></tr>
+      </thead>
+      <tbody>
+        {% for t in tunnel_rows %}
+        <tr>
+          <td class="mono">{{ t.tunnel }}</td>
+          <td class="mono">{{ t.our_asn }}</td>
+          <td class="mono">{{ t.our_inside_ip }}</td>
+          <td class="mono">{{ t.vendor_asn }}</td>
+          <td class="mono">{{ t.vendor_inside_ip }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      {% if vendor_cidrs %}
+      <p>Static routing — please route the following prefixes across the tunnel:</p>
+      <ul class="mono">{% for cidr in vendor_cidrs %}<li>{{ cidr }}</li>{% endfor %}</ul>
+      {% else %}
+      <p class="empty">Static routing — no vendor prefixes specified.</p>
+      {% endif %}
+    {% endif %}
+
+    <!-- Reachable addresses -->
+    {% if reachable %}
+    <h2>Services You Connect To</h2>
+    <p>Vendor-initiated traffic should target these published addresses (NAT is applied at our boundary):</p>
+    <table>
+      <thead><tr><th>Published Address</th><th>Description</th></tr></thead>
+      <tbody>
+        {% for r in reachable %}
+        <tr><td class="mono">{{ r.address }}</td><td>{{ r.description|default:"—" }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <!-- Traffic flows -->
+    <h2>Traffic Flows</h2>
+    {% if flow_rows %}
+      {% if diagram %}{% localize off %}
+      <svg viewBox="0 0 {{ diagram.width }} {{ diagram.height }}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Traffic flow diagram">
+        <defs>
+          <marker id="fa" viewBox="0 0 10 6" refX="10" refY="3" markerWidth="8" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,3 L0,6 Z" fill="#6366F1" />
+          </marker>
+        </defs>
+        <text x="{{ diagram.mid_x }}" y="22" text-anchor="middle" fill="#374151" font-size="13" font-weight="600">Traffic Flow</text>
+        <text x="90" y="46" text-anchor="middle" fill="#6B7280" font-size="11">Source</text>
+        <text x="{{ diagram.right_label_x }}" y="46" text-anchor="middle" fill="#6B7280" font-size="11">Destination</text>
+        {% for s in diagram.sources %}
+        <rect x="{{ s.box_x }}" y="{{ s.y }}" width="160" height="{{ s.height }}" rx="8" fill="#EEF2FF" stroke="#6366F1" stroke-width="1.5" />
+        <text x="{{ s.text_x }}" y="{{ s.label_y }}" text-anchor="middle" fill="#4338CA" font-size="11" font-weight="600">{{ s.label }}</text>
+        {% for d in s.desc_lines %}<text x="{{ s.text_x }}" y="{{ d.y }}" text-anchor="middle" fill="#6366F1" font-size="9">{{ d.text }}</text>{% endfor %}
+        {% endfor %}
+        {% for d in diagram.destinations %}
+        <rect x="{{ d.box_x }}" y="{{ d.y }}" width="160" height="{{ d.height }}" rx="8" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5" />
+        <text x="{{ d.text_x }}" y="{{ d.label_y }}" text-anchor="middle" fill="#92400E" font-size="11" font-weight="600">{{ d.label }}</text>
+        {% for ln in d.desc_lines %}<text x="{{ d.text_x }}" y="{{ ln.y }}" text-anchor="middle" fill="#D97706" font-size="9">{{ ln.text }}</text>{% endfor %}
+        {% endfor %}
+        {% for c in diagram.connections %}
+        <line x1="{{ c.x1 }}" y1="{{ c.src_y }}" x2="{{ c.x2 }}" y2="{{ c.dst_y }}" stroke="#6366F1" stroke-width="1.5" marker-end="url(#fa)" />
+        <rect x="{{ c.rect_x }}" y="{{ c.rect_y }}" width="{{ c.rect_w }}" height="16" rx="4" fill="#EEF2FF" />
+        <text x="{{ c.text_x }}" y="{{ c.text_y }}" text-anchor="middle" fill="#4338CA" font-size="9" font-weight="500">{{ c.label }}</text>
+        {% endfor %}
+      </svg>
+      {% endlocalize %}{% endif %}
+      <table style="margin-top:12px">
+        <thead>
+          <tr><th>Direction</th><th>Source</th><th>Destination</th><th>Protocols</th><th>Ports</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          {% for f in flow_rows %}
+          <tr>
+            <td><span class="pill {% if f.direction == 'inbound' %}in{% else %}out{% endif %}">{{ f.initiator }}</span></td>
+            <td class="mono">{{ f.src }}</td>
+            <td class="mono">{{ f.dst }}</td>
+            <td>{{ f.protocols }}</td>
+            <td class="mono">{{ f.ports }}</td>
+            <td>{{ f.description|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+    <p class="empty">No traffic flows defined.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

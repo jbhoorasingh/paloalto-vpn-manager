@@ -60,6 +60,7 @@ urlpatterns = [
     path("vpn/requests/<int:pk>/", request_detail.request_detail_view, name="request-detail"),
     path("vpn/requests/<int:pk>/delete/", request_detail.request_delete_view, name="request-delete"),
     path("vpn/requests/<int:pk>/config/download/", request_detail.request_config_download_view, name="request-config-download"),
+    path("vpn/requests/<int:pk>/vendor-handoff/", request_detail.vendor_handoff_view, name="request-vendor-handoff"),
     path("vpn/requests/<int:pk>/config/template/", config_template.request_config_template_view, name="request-config-template"),
 
     # Config templates (document layout + segments)

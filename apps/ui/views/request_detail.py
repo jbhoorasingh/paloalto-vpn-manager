@@ -467,6 +467,7 @@ def request_detail_view(request, pk):
     panos_configs = rendered_site_configs(vpn_request)
     config_template_source = panos_configs[0]["template_source"] if panos_configs else "default"
     can_edit_config_template = request.user.is_network_approver
+    can_vendor_handoff = vpn_request.status in VENDOR_HANDOFF_STATUSES
 
     return render(request, "vpn/request_detail.html", {
         "nav_active": "my-requests",
@@ -494,7 +495,32 @@ def request_detail_view(request, pk):
         "panos_configs": panos_configs,
         "config_template_source": config_template_source,
         "can_edit_config_template": can_edit_config_template,
+        "can_vendor_handoff": can_vendor_handoff,
     })
+
+
+# Statuses at which tunnels + NAT are allocated, so a complete vendor handoff
+# can be produced (network approval onward).
+VENDOR_HANDOFF_STATUSES = frozenset({
+    "network_approved", "scheduled", "deploy_ready", "deployed", "active",
+    "recert_due", "recert_in_review", "recert_approved",
+    "decommission_requested", "decommission_approved",
+})
+
+
+@login_required
+def vendor_handoff_view(request, pk):
+    """Print-friendly vendor handoff page (the user prints / saves to PDF)."""
+    from apps.vpn.services.vendor_handoff import build_handoff_context
+
+    vpn_request = get_object_or_404(
+        VpnRequest.objects.select_related("vendor"), pk=pk
+    )
+    if vpn_request.status not in VENDOR_HANDOFF_STATUSES:
+        return redirect("ui:request-detail", pk=pk)
+
+    context = build_handoff_context(vpn_request)
+    return render(request, "vpn/vendor_handoff.html", context)
 
 
 @login_required

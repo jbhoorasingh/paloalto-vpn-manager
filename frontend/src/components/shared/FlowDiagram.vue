@@ -141,7 +141,7 @@
               <th class="px-3 py-2 text-left font-medium text-gray-500">Source</th>
               <th class="px-3 py-2 text-left font-medium text-gray-500">Destination</th>
               <th class="px-3 py-2 text-left font-medium text-gray-500">Direction</th>
-              <th class="px-3 py-2 text-left font-medium text-gray-500">Protocol</th>
+              <th class="px-3 py-2 text-left font-medium text-gray-500">Protocols</th>
               <th class="px-3 py-2 text-left font-medium text-gray-500">Ports</th>
               <th class="px-3 py-2 text-left font-medium text-gray-500">Description</th>
             </tr>
@@ -161,7 +161,7 @@
                 >&larr; Inbound</span>
                 <span v-else class="text-gray-400">--</span>
               </td>
-              <td class="whitespace-nowrap px-3 py-1.5 text-gray-600">{{ flow.protocol.toUpperCase() }}</td>
+              <td class="whitespace-nowrap px-3 py-1.5 text-gray-600">{{ protocolText(flow) }}</td>
               <td class="whitespace-nowrap px-3 py-1.5 font-mono text-gray-600">{{ flow.destination_ports || 'any' }}</td>
               <td class="px-3 py-1.5 text-gray-500">{{ flow.description || '---' }}</td>
             </tr>
@@ -186,6 +186,16 @@ const props = defineProps({
 const { apiFetch } = useApi()
 const flows = ref([])
 const loading = ref(true)
+
+// Flows carry `protocols` as a list; tolerate a legacy single `protocol` string.
+function flowProtocols(flow) {
+  if (Array.isArray(flow.protocols)) return flow.protocols
+  return (flow.protocols || flow.protocol || '').toString().split(',').filter(Boolean)
+}
+
+function protocolText(flow) {
+  return flowProtocols(flow).map((p) => p.toUpperCase()).join(', ')
+}
 
 onMounted(async () => {
   const result = await apiFetch(`/api/vpn/requests/${props.requestId}/flows/`)
@@ -264,9 +274,7 @@ const connections = computed(() => {
     labelOffsets.set(key, offset + 1)
     const labelY = midY + offset * 16
 
-    const protos = Array.isArray(flow.protocols)
-      ? flow.protocols
-      : (flow.protocols || flow.protocol || '').toString().split(',').filter(Boolean)
+    const protos = flowProtocols(flow)
     const protoLabel = protos.map((p) => p.toUpperCase()).join('/') || 'ANY'
     const hasPort = protos.some((p) => p === 'tcp' || p === 'udp')
     const ports = flow.destination_ports || 'any'

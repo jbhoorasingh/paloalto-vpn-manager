@@ -94,6 +94,10 @@ class VpnRequest(models.Model):
     vendor_endpoints_count = models.PositiveSmallIntegerField(
         default=1, choices=((1, "1"), (2, "2"))
     )
+    our_endpoints_count = models.PositiveSmallIntegerField(
+        default=1, choices=((1, "1"), (2, "2")),
+        help_text="1 = single firewall on our side; 2 = DR-paired endpoints drawing from the shared NAT pool",
+    )
     topology_type = models.CharField(
         max_length=20, choices=TopologyType.choices, blank=True
     )

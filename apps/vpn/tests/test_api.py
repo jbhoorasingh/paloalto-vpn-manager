@@ -307,6 +307,36 @@ class TestFlowsAPI:
         data = response.json()
         assert data["source_cidr"] == "10.1.0.0/16"
 
+    def test_create_flow_multi_protocol(self, api_client, api_user):
+        req = VpnRequestFactory(requester=api_user)
+        response = api_client.post(
+            reverse("vpn-api:flow-list-create", args=[req.pk]),
+            data=json.dumps({
+                "source_cidr": "10.1.0.0/16",
+                "destination_cidr": "172.16.0.10/32",
+                "protocols": ["tcp", "udp", "icmp"],
+                "destination_ports": "443",
+            }),
+            content_type="application/json",
+        )
+        assert response.status_code == 201
+        assert response.json()["protocols"] == ["tcp", "udp", "icmp"]
+
+    def test_create_flow_accepts_legacy_protocol_key(self, api_client, api_user):
+        req = VpnRequestFactory(requester=api_user)
+        response = api_client.post(
+            reverse("vpn-api:flow-list-create", args=[req.pk]),
+            data=json.dumps({
+                "source_cidr": "10.1.0.0/16",
+                "destination_cidr": "172.16.0.10/32",
+                "protocol": "udp",
+                "destination_ports": "53",
+            }),
+            content_type="application/json",
+        )
+        assert response.status_code == 201
+        assert response.json()["protocols"] == ["udp"]
+
     def test_create_flow_invalid_cidr(self, api_client, api_user):
         req = VpnRequestFactory(requester=api_user)
         response = api_client.post(

@@ -97,7 +97,7 @@
               <dt class="w-40 flex-shrink-0 text-sm font-medium text-gray-500">Our Site 1</dt>
               <dd class="text-sm text-gray-900">{{ site1Name || 'Not selected' }}</dd>
             </div>
-            <div class="flex py-1.5">
+            <div v-if="formData.our_endpoints_count === 2" class="flex py-1.5">
               <dt class="w-40 flex-shrink-0 text-sm font-medium text-gray-500">Our Site 2</dt>
               <dd class="text-sm text-gray-900">{{ site2Name || 'Not selected' }}</dd>
             </div>
@@ -105,6 +105,7 @@
           <div>
             <TopologyDiagram
               :vendor-endpoints-count="formData.vendor_endpoints_count"
+              :our-endpoints-count="formData.our_endpoints_count"
               :topology-type="formData.topology_type"
               :vendor-endpoint1-ip="formData.vendor_endpoint_1_ip"
               :vendor-endpoint2-ip="formData.vendor_endpoint_2_ip"

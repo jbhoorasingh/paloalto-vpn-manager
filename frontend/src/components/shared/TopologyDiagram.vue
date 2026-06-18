@@ -16,14 +16,22 @@
           Our Region 1
         </text>
 
-        <!-- Our Region 2 -->
-        <rect x="20" y="180" width="130" height="60" rx="8" fill="#EEF2FF" stroke="#6366F1" stroke-width="1.5" />
-        <text x="85" y="205" text-anchor="middle" class="text-xs" fill="#4338CA" font-size="12" font-weight="600">
-          {{ ourSite2Label }}
-        </text>
-        <text x="85" y="225" text-anchor="middle" fill="#6366F1" font-size="10">
-          Our Region 2
-        </text>
+        <!-- Our Region 2 (conditional on paired endpoints) -->
+        <g v-if="ourEndpointsCount === 2">
+          <rect x="20" y="180" width="130" height="60" rx="8" fill="#EEF2FF" stroke="#6366F1" stroke-width="1.5" />
+          <text x="85" y="205" text-anchor="middle" class="text-xs" fill="#4338CA" font-size="12" font-weight="600">
+            {{ ourSite2Label }}
+          </text>
+          <text x="85" y="225" text-anchor="middle" fill="#6366F1" font-size="10">
+            Our Region 2 (DR)
+          </text>
+        </g>
+        <g v-else>
+          <rect x="20" y="180" width="130" height="60" rx="8" fill="#F3F4F6" stroke="#D1D5DB" stroke-width="1" stroke-dasharray="4 2" />
+          <text x="85" y="215" text-anchor="middle" fill="#9CA3AF" font-size="11">
+            (Single side)
+          </text>
+        </g>
       </g>
 
       <!-- Right side: Vendor Endpoints -->
@@ -66,27 +74,27 @@
           <!-- Region 1 -> EP2 -->
           <line x1="150" y1="100" x2="350" y2="200" stroke="#6366F1" stroke-width="2" stroke-dasharray="6 3" />
           <!-- Region 2 -> EP1 -->
-          <line x1="150" y1="200" x2="350" y2="100" stroke="#6366F1" stroke-width="2" stroke-dasharray="6 3" />
+          <line v-if="ourEndpointsCount === 2" x1="150" y1="200" x2="350" y2="100" stroke="#6366F1" stroke-width="2" stroke-dasharray="6 3" />
           <!-- Region 2 -> EP2 -->
-          <line x1="150" y1="220" x2="350" y2="220" stroke="#6366F1" stroke-width="2" />
+          <line v-if="ourEndpointsCount === 2" x1="150" y1="220" x2="350" y2="220" stroke="#6366F1" stroke-width="2" />
         </template>
 
         <!-- Matched Pairs: Region1<->EP1, Region2<->EP2 -->
         <template v-else-if="topologyType === 'matched_pairs' && vendorEndpointsCount === 2">
           <line x1="150" y1="90" x2="350" y2="90" stroke="#6366F1" stroke-width="2" />
-          <line x1="150" y1="210" x2="350" y2="210" stroke="#6366F1" stroke-width="2" />
+          <line v-if="ourEndpointsCount === 2" x1="150" y1="210" x2="350" y2="210" stroke="#6366F1" stroke-width="2" />
         </template>
 
         <!-- Single endpoint: both regions connect to EP1 -->
         <template v-else-if="vendorEndpointsCount === 1">
           <line x1="150" y1="90" x2="350" y2="90" stroke="#6366F1" stroke-width="2" />
-          <line x1="150" y1="210" x2="350" y2="90" stroke="#6366F1" stroke-width="2" stroke-dasharray="6 3" />
+          <line v-if="ourEndpointsCount === 2" x1="150" y1="210" x2="350" y2="90" stroke="#6366F1" stroke-width="2" stroke-dasharray="6 3" />
         </template>
 
         <!-- Default: no topology selected yet -->
         <template v-else>
           <line x1="150" y1="90" x2="350" y2="90" stroke="#D1D5DB" stroke-width="1.5" stroke-dasharray="4 2" />
-          <line x1="150" y1="210" x2="350" y2="210" stroke="#D1D5DB" stroke-width="1.5" stroke-dasharray="4 2" />
+          <line v-if="ourEndpointsCount === 2" x1="150" y1="210" x2="350" y2="210" stroke="#D1D5DB" stroke-width="1.5" stroke-dasharray="4 2" />
         </template>
       </g>
 
@@ -108,6 +116,11 @@ import { computed } from 'vue'
 
 const props = defineProps({
   vendorEndpointsCount: {
+    type: Number,
+    default: 1,
+    validator: (v) => [1, 2].includes(v),
+  },
+  ourEndpointsCount: {
     type: Number,
     default: 1,
     validator: (v) => [1, 2].includes(v),

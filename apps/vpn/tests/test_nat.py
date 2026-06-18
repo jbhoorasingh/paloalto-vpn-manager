@@ -268,6 +268,37 @@ class TestComputeNatSpecs:
         assert by_flow[out_flow] == "outbound"
         assert by_flow[in_flow] == "inbound"
 
+    def test_same_destination_flows_share_one_spec(self):
+        # Two flows to the same /32 in the same direction collapse to ONE spec.
+        site = SiteFactory()
+        req = VpnRequestFactory(directionality="we_initiate", our_endpoint_1_site=site)
+        f1 = TrafficFlowFactory(
+            vpn_request=req, direction="outbound",
+            destination_cidr="172.16.5.10/32", protocols="tcp", destination_ports="443",
+        )
+        f2 = TrafficFlowFactory(
+            vpn_request=req, direction="outbound",
+            destination_cidr="172.16.5.10/32", protocols="udp", destination_ports="1194",
+        )
+        specs = compute_nat_specs(req)
+        assert len(specs) == 1
+        assert set(specs[0]["flows"]) == {f1, f2}
+        assert specs[0]["real_address"] == "172.16.5.10/32"
+
+    def test_count_one_ignores_stale_second_site(self):
+        # our_endpoints_count is authoritative: a stale Site 2 is ignored.
+        site1 = SiteFactory()
+        site2 = SiteFactory()
+        req = VpnRequestFactory(
+            directionality="we_initiate",
+            our_endpoint_1_site=site1, our_endpoint_2_site=site2,
+            our_endpoints_count=1,
+        )
+        TrafficFlowFactory(vpn_request=req, destination_cidr="172.16.5.10/32")
+        specs = compute_nat_specs(req)
+        assert specs[0]["sites"] == [site1]
+        assert specs[0]["shared"] is False
+
 
 # ── DR-shared allocation ─────────────────────────────────────────────
 
@@ -404,7 +435,7 @@ class TestNatPacketWalk:
         flow = TrafficFlowFactory(
             vpn_request=req, direction=direction,
             source_cidr="10.5.0.0/24", destination_cidr="172.16.9.9/32",
-            protocol="tcp", destination_ports="443",
+            protocols="tcp", destination_ports="443",
         )
         for i, site in enumerate(sites):
             TunnelInterface.objects.create(
@@ -485,6 +516,24 @@ class TestAllocateNatMappings:
         assert m.nat_address == "10.111.96.0/32"
         assert m.real_address == "10.10.70.100/32"
         assert m.nat_pool is not None
+
+    def test_same_destination_flows_get_one_mapping(self):
+        # Multiple flows to the same /32 share a single NAT address.
+        site = SiteFactory()
+        NatPoolFactory(site=site, direction="outbound", cidr="10.111.96.0/24")
+        req = VpnRequestFactory(directionality="we_initiate", our_endpoint_1_site=site)
+        TrafficFlowFactory(
+            vpn_request=req, direction="outbound",
+            destination_cidr="172.16.5.10/32", protocols="tcp", destination_ports="443",
+        )
+        TrafficFlowFactory(
+            vpn_request=req, direction="outbound",
+            destination_cidr="172.16.5.10/32", protocols="udp", destination_ports="1194",
+        )
+        allocate_nat_mappings(req)
+        assert req.nat_mappings.count() == 1
+        m = req.nat_mappings.first()
+        assert m.real_address == "172.16.5.10/32"
 
     def test_both_directions_need_both_pools(self):
         site = SiteFactory()

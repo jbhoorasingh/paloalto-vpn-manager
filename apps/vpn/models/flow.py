@@ -32,6 +32,28 @@ class FlowProtocol(models.TextChoices):
     ANY = "any", "Any"
 
 
+# Protocols whose flows carry destination ports (and therefore generate a
+# PAN-OS service object). ICMP/Any do not.
+PORT_PROTOCOLS = ("tcp", "udp")
+VALID_PROTOCOLS = {choice.value for choice in FlowProtocol}
+
+
+def parse_protocols(value):
+    """Normalize a protocols value (CSV string or list) to an ordered list."""
+    if not value:
+        return []
+    if isinstance(value, (list, tuple)):
+        tokens = value
+    else:
+        tokens = str(value).split(",")
+    seen = []
+    for token in tokens:
+        token = str(token).strip().lower()
+        if token and token not in seen:
+            seen.append(token)
+    return seen
+
+
 class FlowDirection(models.TextChoices):
     """
     Who initiates the connection. Determines which boundary NAT pool the
@@ -85,7 +107,10 @@ class TrafficFlow(models.Model):
         max_length=10, choices=FlowDirection.choices, default=FlowDirection.OUTBOUND,
         help_text="Who initiates this flow — picks the boundary NAT pool (outbound vs inbound)",
     )
-    protocol = models.CharField(max_length=10, choices=FlowProtocol.choices, default=FlowProtocol.TCP)
+    protocols = models.CharField(
+        max_length=20, default="tcp",
+        help_text="Comma-separated protocols (tcp,udp,icmp) or 'any' for all IP protocols",
+    )
     destination_ports = models.CharField(
         max_length=200, blank=True, validators=[validate_ports],
         help_text="Comma-separated ports or ranges, e.g. 443,8443,10000-10100",
@@ -99,14 +124,44 @@ class TrafficFlow(models.Model):
     class Meta:
         ordering = ["order", "pk"]
 
+    @property
+    def protocol_list(self):
+        """The flow's protocols as an ordered list, e.g. ['tcp', 'udp']."""
+        return parse_protocols(self.protocols)
+
+    @property
+    def has_port_protocol(self):
+        """True if any selected protocol uses ports (tcp/udp)."""
+        return any(p in PORT_PROTOCOLS for p in self.protocol_list)
+
+    def protocols_display(self):
+        """Human-readable protocol list, e.g. 'TCP, UDP'."""
+        labels = {c.value: c.label for c in FlowProtocol}
+        return ", ".join(labels.get(p, p.upper()) for p in self.protocol_list)
+
     def __str__(self):
-        return f"{self.source_cidr} → {self.destination_cidr} ({self.get_protocol_display()})"
+        return f"{self.source_cidr} → {self.destination_cidr} ({self.protocols_display()})"
 
     def clean(self):
         super().clean()
-        # Ports are meaningless for ICMP/Any — drop whatever the form had in
-        # the field before it was disabled.
-        if self.protocol in (FlowProtocol.ICMP, FlowProtocol.ANY):
+        # Normalize and validate the protocol set.
+        protocols = parse_protocols(self.protocols)
+        invalid = [p for p in protocols if p not in VALID_PROTOCOLS]
+        if invalid:
+            raise ValidationError({
+                "protocols": f"Unknown protocol(s): {', '.join(invalid)}."
+            })
+        if not protocols:
+            raise ValidationError({"protocols": "Select at least one protocol."})
+        if "any" in protocols and len(protocols) > 1:
+            raise ValidationError({
+                "protocols": "'Any' covers all protocols and can't be combined with others."
+            })
+        self.protocols = ",".join(protocols)
+
+        # Ports only apply to tcp/udp — drop whatever the form had in the field
+        # when no port-based protocol is selected (icmp-only / any).
+        if not self.has_port_protocol:
             self.destination_ports = ""
 
         # Boundary-NAT rule: private destinations are NAT'd one-to-one, so

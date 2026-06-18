@@ -34,6 +34,7 @@ def serialize_request(req):
         "data_classification": req.data_classification,
         "application_ids": list(req.applications.values_list("pk", flat=True)),
         "vendor_endpoints_count": req.vendor_endpoints_count,
+        "our_endpoints_count": req.our_endpoints_count,
         "topology_type": req.topology_type,
         "vendor_endpoint_1_ip": req.vendor_endpoint_1_ip or "",
         "vendor_endpoint_2_ip": req.vendor_endpoint_2_ip or "",
@@ -113,7 +114,7 @@ STEP_FIELDS = {
     1: ["vendor_id"],
     2: ["title", "purpose", "directionality", "data_description", "data_classification"],
     3: [
-        "vendor_endpoints_count", "topology_type",
+        "vendor_endpoints_count", "our_endpoints_count", "topology_type",
         "vendor_endpoint_1_ip", "vendor_endpoint_2_ip",
         "our_endpoint_1_site_id", "our_endpoint_2_site_id",
     ],
@@ -135,7 +136,7 @@ STEP_FIELDS = {
 
 # Integer fields that need type coercion
 INT_FIELDS = {
-    "vendor_endpoints_count", "ike_lifetime", "ipsec_lifetime",
+    "vendor_endpoints_count", "our_endpoints_count", "ike_lifetime", "ipsec_lifetime",
     "bgp_local_asn", "bgp_remote_asn", "bgp_remote_asn_2", "vendor_id",
     "our_endpoint_1_site_id", "our_endpoint_2_site_id",
 }

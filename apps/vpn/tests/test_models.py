@@ -94,7 +94,8 @@ class TestTrafficFlow:
         flow = TrafficFlowFactory()
         assert flow.source_cidr == "10.0.0.0/24"
         assert flow.destination_cidr == "192.168.1.10/32"
-        assert flow.protocol == "tcp"
+        assert flow.protocols == "tcp"
+        assert flow.protocol_list == ["tcp"]
 
     def test_private_destination_must_be_host(self):
         from django.core.exceptions import ValidationError
@@ -118,6 +119,43 @@ class TestTrafficFlow:
         flow = TrafficFlowFactory()
         assert "10.0.0.0/24" in str(flow)
         assert "192.168.1.10/32" in str(flow)
+
+    def test_multi_protocol_normalized(self):
+        flow = TrafficFlowFactory(protocols="tcp, udp ,icmp")
+        flow.full_clean()
+        assert flow.protocols == "tcp,udp,icmp"
+        assert flow.protocol_list == ["tcp", "udp", "icmp"]
+        assert flow.has_port_protocol is True
+
+    def test_any_cannot_combine_with_others(self):
+        flow = TrafficFlowFactory.build(
+            vpn_request=TrafficFlowFactory().vpn_request,
+            destination_cidr="172.16.5.10/32", protocols="any,tcp",
+        )
+        with pytest.raises(ValidationError, match="Any"):
+            flow.full_clean()
+
+    def test_unknown_protocol_rejected(self):
+        flow = TrafficFlowFactory.build(
+            vpn_request=TrafficFlowFactory().vpn_request,
+            destination_cidr="172.16.5.10/32", protocols="tcp,sctp",
+        )
+        with pytest.raises(ValidationError, match="Unknown protocol"):
+            flow.full_clean()
+
+    def test_ports_cleared_for_icmp_only(self):
+        flow = TrafficFlowFactory(
+            destination_cidr="172.16.5.10/32", protocols="icmp", destination_ports="443"
+        )
+        flow.full_clean()
+        assert flow.destination_ports == ""
+
+    def test_ports_kept_when_any_port_protocol_present(self):
+        flow = TrafficFlowFactory(
+            destination_cidr="172.16.5.10/32", protocols="udp,icmp", destination_ports="1194"
+        )
+        flow.full_clean()
+        assert flow.destination_ports == "1194"
 
     def test_valid_cidr(self):
         validate_cidr("10.0.0.0/24")

@@ -38,10 +38,18 @@ def directions_for_flow(flow, vpn_request):
     return _directions_for(vpn_request)
 
 
-def _endpoint_sites(vpn_request):
-    """Return the distinct endpoint sites (firewalls) that need NAT mappings."""
+def endpoint_sites(vpn_request):
+    """
+    The distinct endpoint sites (firewalls) that participate, honoring the
+    explicit our-side endpoint count. A count of 1 means a single firewall even
+    if a stale Site 2 is still set; a count of 2 includes both — a DR pair that
+    draws from the shared NAT pool.
+    """
+    candidates = [vpn_request.our_endpoint_1_site]
+    if vpn_request.our_endpoints_count == 2:
+        candidates.append(vpn_request.our_endpoint_2_site)
     sites = []
-    for site in (vpn_request.our_endpoint_1_site, vpn_request.our_endpoint_2_site):
+    for site in candidates:
         if site and site not in sites:
             sites.append(site)
     return sites
@@ -124,19 +132,27 @@ def compute_nat_specs(vpn_request):
     draws from; legacy flows without a direction fall back to the
     request-level directionality.
 
+    Multiple flows that target the SAME destination in the same direction share
+    ONE NAT address — NAT is per-destination and protocol-agnostic, so a single
+    DNAT/SNAT pair covers every flow to that host. Specs are therefore grouped
+    by (direction, real_address), each carrying the list of flows it serves.
+
     Only private (RFC-1918) destinations are NAT'd — validation forces those
     to /32 hosts, giving one-to-one mappings. Globally-unique (public)
     destinations are reachable as-is and get no mapping. ``real_address`` is
     the flow's destination — the real vendor host for outbound, the real
     internal service for inbound.
 
-    Returns list of dicts: {sites, shared, direction, real_address, prefixlen, flow}.
+    Returns list of dicts: {sites, shared, direction, real_address, prefixlen,
+    flows, flow}. ``flow`` is a representative (first) flow for back-compat.
     """
-    specs = []
-    sites = _endpoint_sites(vpn_request)
+    sites = endpoint_sites(vpn_request)
     shared = len(sites) > 1
     flows = list(vpn_request.flows.all())
 
+    # Group flows by (direction, real_address); preserve first-seen order.
+    groups = {}
+    order = []
     for flow in flows:
         real = flow.destination_cidr
         if not real:
@@ -144,19 +160,29 @@ def compute_nat_specs(vpn_request):
         # Globally-unique destination — no boundary NAT required.
         if not is_rfc1918(real):
             continue
+        for direction in directions_for_flow(flow, vpn_request):
+            key = (direction, real)
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append(flow)
+
+    specs = []
+    for direction, real in order:
+        group_flows = groups[(direction, real)]
         try:
             prefixlen = netaddr.IPNetwork(real).prefixlen
         except (netaddr.AddrFormatError, ValueError):
             prefixlen = 32
-        for direction in directions_for_flow(flow, vpn_request):
-            specs.append({
-                "sites": sites,
-                "shared": shared,
-                "direction": direction,
-                "real_address": real,
-                "prefixlen": prefixlen,
-                "flow": flow,
-            })
+        specs.append({
+            "sites": sites,
+            "shared": shared,
+            "direction": direction,
+            "real_address": real,
+            "prefixlen": prefixlen,
+            "flows": group_flows,
+            "flow": group_flows[0],
+        })
     return specs
 
 
@@ -195,6 +221,16 @@ def allocate_nat_mappings(vpn_request):
             pool_site, spec["direction"], spec["prefixlen"], dr_peer=dr_peer
         )
 
+        # One mapping covers every flow to this destination; record the
+        # distinct flow descriptions so the intent isn't lost. Cap at the
+        # column width — create() skips validation, and Postgres rejects
+        # over-length values (SQLite would silently accept them).
+        descriptions = [f.description for f in spec["flows"] if f.description]
+        description = "; ".join(dict.fromkeys(descriptions))
+        max_len = NatMapping._meta.get_field("description").max_length
+        if len(description) > max_len:
+            description = description[: max_len - 1] + "…"
+
         for site in spec["sites"]:
             NatMapping.objects.create(
                 vpn_request=vpn_request,
@@ -204,7 +240,7 @@ def allocate_nat_mappings(vpn_request):
                 nat_address=nat_address,
                 real_address=spec["real_address"],
                 traffic_flow=spec["flow"],
-                description=spec["flow"].description if spec["flow"] else "",
+                description=description,
             )
             created += 1
 

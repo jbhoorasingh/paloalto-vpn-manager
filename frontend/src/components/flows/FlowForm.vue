@@ -101,19 +101,47 @@
         </div>
       </div>
 
-      <!-- Protocol / Ports -->
+      <!-- Protocols / Ports -->
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
-          <label class="mb-1.5 block text-sm font-medium text-gray-700">Protocol</label>
-          <select
-            v-model="localFlow.protocol"
-            class="block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-          >
-            <option value="tcp">TCP</option>
-            <option value="udp">UDP</option>
-            <option value="icmp">ICMP</option>
-            <option value="any">Any</option>
-          </select>
+          <label class="mb-1.5 block text-sm font-medium text-gray-700">Protocols</label>
+          <div class="flex flex-wrap items-center gap-2">
+            <label
+              v-for="proto in ['tcp', 'udp', 'icmp']"
+              :key="proto"
+              class="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors"
+              :class="isAny
+                ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400'
+                : (localFlow.protocols.includes(proto)
+                  ? 'cursor-pointer border-indigo-600 bg-indigo-50 text-indigo-700'
+                  : 'cursor-pointer border-gray-300 text-gray-700 hover:border-gray-400')"
+            >
+              <input
+                type="checkbox"
+                class="sr-only"
+                :disabled="isAny"
+                :checked="localFlow.protocols.includes(proto)"
+                @change="toggleProtocol(proto)"
+              />
+              {{ proto.toUpperCase() }}
+            </label>
+            <span class="text-gray-300">|</span>
+            <label
+              class="flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors"
+              :class="isAny
+                ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                : 'border-gray-300 text-gray-700 hover:border-gray-400'"
+            >
+              <input type="checkbox" class="sr-only" :checked="isAny" @change="toggleAny" />
+              Any
+            </label>
+          </div>
+          <p v-if="validationErrors.protocols" class="mt-1 text-xs text-red-600">
+            {{ validationErrors.protocols }}
+          </p>
+          <p class="mt-1 text-xs text-gray-500">
+            Pick one or more. "Any" matches all IP protocols and can't be combined.
+          </p>
         </div>
         <div>
           <label class="mb-1.5 block text-sm font-medium text-gray-700">Destination Ports</label>
@@ -123,10 +151,13 @@
             placeholder="443, 8080-8090"
             class="block w-full rounded-md border-gray-300 font-mono text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-400"
             :class="{ 'border-red-300': validationErrors.destination_ports }"
-            :disabled="localFlow.protocol === 'icmp' || localFlow.protocol === 'any'"
+            :disabled="!hasPortProtocol"
           />
           <p v-if="validationErrors.destination_ports" class="mt-1 text-xs text-red-600">
             {{ validationErrors.destination_ports }}
+          </p>
+          <p v-if="!hasPortProtocol" class="mt-1 text-xs text-gray-400">
+            Ports apply to TCP/UDP only.
           </p>
         </div>
       </div>
@@ -166,7 +197,7 @@
 </template>
 
 <script setup>
-import { reactive, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
 const props = defineProps({
   flow: {
@@ -181,28 +212,54 @@ const props = defineProps({
 
 const emit = defineEmits(['save', 'cancel'])
 
+function normalizeProtocols(flow) {
+  if (Array.isArray(flow.protocols) && flow.protocols.length) return [...flow.protocols]
+  if (typeof flow.protocols === 'string' && flow.protocols) {
+    return flow.protocols.split(',').map((s) => s.trim()).filter(Boolean)
+  }
+  // Legacy flows carried a single `protocol`
+  if (flow.protocol) return [flow.protocol]
+  return ['tcp']
+}
+
 const localFlow = reactive({
   ...props.flow,
   // Legacy flows may predate the direction field — default them to outbound
   direction: props.flow.direction || 'outbound',
+  protocols: normalizeProtocols(props.flow),
 })
+delete localFlow.protocol
+
+const isAny = computed(() => localFlow.protocols.includes('any'))
+const hasPortProtocol = computed(
+  () => localFlow.protocols.includes('tcp') || localFlow.protocols.includes('udp')
+)
+
+function toggleProtocol(proto) {
+  if (isAny.value) return
+  const idx = localFlow.protocols.indexOf(proto)
+  if (idx === -1) localFlow.protocols.push(proto)
+  else localFlow.protocols.splice(idx, 1)
+}
+
+function toggleAny() {
+  localFlow.protocols = isAny.value ? ['tcp'] : ['any']
+}
 
 const validationErrors = reactive({
   source_cidr: '',
   destination_cidr: '',
   destination_ports: '',
+  protocols: '',
 })
 
-// Ports don't apply to ICMP/Any — clear instead of silently keeping stale input
-watch(
-  () => localFlow.protocol,
-  (protocol) => {
-    if (protocol === 'icmp' || protocol === 'any') {
-      localFlow.destination_ports = ''
-      validationErrors.destination_ports = ''
-    }
+// Ports only apply to TCP/UDP — clear instead of silently keeping stale input
+watch(hasPortProtocol, (has) => {
+  if (!has) {
+    localFlow.destination_ports = ''
+    validationErrors.destination_ports = ''
   }
-)
+})
 
 function validateCidr(value) {
   if (!value) return 'Required'
@@ -237,7 +294,7 @@ function validateDestinationCidr(value) {
 
 function validatePorts(value) {
   if (!value) return ''
-  if (localFlow.protocol === 'icmp' || localFlow.protocol === 'any') return ''
+  if (!hasPortProtocol.value) return ''
   const portRegex = /^(\d{1,5}(-\d{1,5})?)(,\s*\d{1,5}(-\d{1,5})?)*$/
   if (!portRegex.test(value.trim())) return 'Invalid format (e.g., 443 or 8080-8090)'
   return ''
@@ -247,13 +304,19 @@ function handleSave() {
   validationErrors.source_cidr = validateCidr(localFlow.source_cidr)
   validationErrors.destination_cidr = validateDestinationCidr(localFlow.destination_cidr)
   validationErrors.destination_ports = validatePorts(localFlow.destination_ports)
+  validationErrors.protocols = localFlow.protocols.length ? '' : 'Select at least one protocol'
 
-  if (validationErrors.source_cidr || validationErrors.destination_cidr || validationErrors.destination_ports) {
+  if (
+    validationErrors.source_cidr ||
+    validationErrors.destination_cidr ||
+    validationErrors.destination_ports ||
+    validationErrors.protocols
+  ) {
     return
   }
 
   const payload = { ...localFlow }
-  if (payload.protocol === 'icmp' || payload.protocol === 'any') {
+  if (!hasPortProtocol.value) {
     payload.destination_ports = ''
   }
   emit('save', payload)
